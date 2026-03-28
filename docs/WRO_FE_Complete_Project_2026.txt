@@ -1,0 +1,3416 @@
+======================================
+FILE: eps323.cpp
+======================================
+/*
+ * WRO Future Engineers — Главный код ESP32
+ * Версия 8.7 — RACE DAY PRO (Obstacle & Open Challenge)
+ *
+ * Железо: ESP32 DevKitC V4, BTS7960, JX PDI-6221MG,
+ *         TCA9548A, ICM-20948, AS5600 x2, OpenMV H7 Plus,
+ *         VL53L1X x2 (через TCA CH3/CH4)
+ *
+ * Ключевые изменения 8.7:
+ * - Поддержка двух режимов (Open/Obstacle Challenge) через тумблер (PIN 4).
+ * - Динамическое смещение (Dynamic Offset) ПИД для плавного объезда столбов.
+ * - Одометрия финишной зоны: точная остановка ровно через 3 круга.
+ * - Hardware I2C Timeout (3000 мс) для защиты от зависаний TCA/AS5600 от помех мотора.
+ * - Конечный автомат: INIT, TRACKING, BLIND_TURN, SAFE_STOP, FINISH
+ * - 3-польный UART протокол: errorX,distance,objectType\n
+ * - Жёсткая защита: dt clamp IMU, остаток поворота для кругов,
+ *   блокировка движения при критической потере энкодеров.
+ */
+
+#include <Wire.h>
+#include <ESP32Servo.h>
+#include <Adafruit_ICM20948.h>
+#include <Adafruit_Sensor.h>
+#include <math.h>
+
+// ==============================
+// ПИНЫ
+// ==============================
+#define I2C_SDA          21
+#define I2C_SCL          22
+#define SERVO_PIN        18
+#define MOTOR_R_EN       19
+#define MOTOR_L_EN       23
+#define MOTOR_R_PWM       5
+#define MOTOR_L_PWM      14
+#define UART_RX          16
+#define UART_TX          17
+#define ESTOP_PIN        32
+#define MODE_SWITCH_PIN   4  // ТУМБЛЕР РЕЖИМА: LOW = OBSTACLE, HIGH = OPEN
+#define LED_PIN           2
+
+// ==============================
+// НАСТРОЙКИ
+// ==============================
+#define SERVO_CENTER     90
+#define SERVO_MAX_RIGHT 135
+#define SERVO_MAX_LEFT   45
+#define MOTOR_MAX_SPEED 150
+#define MOTOR_TURN_FAST 120
+#define MOTOR_TURN_SLOW  80
+#define MOTOR_MIN_SPEED  35
+
+#define TARGET_LAPS       3
+#define LAP_DEGREES     360.0f
+#define FINISH_ZONE_CM  100  // Расстояние стартовой зоны для плавной остановки
+
+// ==============================
+// PID (камера/курс) и гироскоп
+// ==============================
+float PID_KP  = 0.50f;
+float PID_KI  = 0.001f;
+float PID_KD  = 0.10f;
+float GYRO_KP = 1.20f;
+float integralError = 0.0f;
+int dynamicErrorOffset = 0;  // Смещение ПИД для объезда препятствий
+
+// ==============================
+// I2C
+// ==============================
+#define TCA_ADDRESS      0x70
+#define AS5600_ADDRESS   0x36
+#define TCA_CH_IMU        0
+#define TCA_CH_ENC_LEFT   1
+#define TCA_CH_ENC_RIGHT  2
+// TCA_CH_VL53_LEFT/RIGHT (3,4) reserved for future distance sensors
+
+// ==============================
+// ТАЙМАУТЫ И ОДОМЕТРИЯ
+// ==============================
+#define CAMERA_TIMEOUT       500
+#define PRINT_INTERVAL       200
+#define LOOP_INTERVAL         10
+#define GYRO_CALIB_SAMPLES   300
+#define FINISH_BLINK_MS      500
+#define ESTOP_DEBOUNCE_MS     20
+#define MAX_IMU_DT_SEC     0.05f
+#define ENCODER_FAIL_STOP    50
+#define SPEED_RAMP_STEP       8
+#define BLIND_TURN_TIMEOUT  3000
+#define BLIND_TURN_ANGLE      85.0f
+#define ENCODER_TURN_TICKS  3000
+
+// ==============================
+// ОБЪЕКТЫ
+// ==============================
+Servo steeringServo;
+Adafruit_ICM20948 icm;
+
+// ==============================
+// КАМЕРА
+// ==============================
+int   cameraErrorX      = 0;
+int   cameraDistance    = 0;
+int   cameraObjectType  = 0; // 0=none,1=orange,2=blue,3=red,4=green
+bool  cameraOnline      = false;
+bool  newCameraData     = false;
+unsigned long lastCameraTime = 0;
+int   lastKnownDistance = 999;
+int   lastObjectType    = 0;
+
+#define UART_BUF_SIZE 32
+static char    uartBuf[UART_BUF_SIZE];
+static uint8_t uartBufPos = 0;
+
+// ==============================
+// ГИРОСКОП / МАГНИТОМЕТР
+// ==============================
+float yawAngle      = 0.0f;
+float gyroZbias     = 0.0f;
+float totalRotation = 0.0f;
+float lastYaw       = 0.0f;
+unsigned long lastIMUTime = 0;
+float targetHeading = 0.0f;
+float magBiasX      = 0.0f;
+float magBiasY      = 0.0f;
+
+// ==============================
+// ОДОМЕТРИЯ
+// ==============================
+int  encLeft        = 0;
+int  encRight       = 0;
+int  encLeftPrev    = 0;
+int  encRightPrev   = 0;
+long totalDistLeft  = 0;
+long totalDistRight = 0;
+int  encErrorCount  = 0;
+bool encoderFaultActive = false;
+
+// ==============================
+// СОСТОЯНИЯ И УПРАВЛЕНИЕ
+// ==============================
+int  targetSteering  = SERVO_CENTER;
+int  targetSpeed     = 0;
+int  commandSpeed    = 0; // после плавного ramp
+int  lastCameraError = 0;
+
+int  globalTrackDirection = 1; 
+bool directionConfirmed   = false; 
+
+long turnStartDistLeft    = 0;
+long turnStartDistRight   = 0;
+int  closeWallCount       = 0; 
+
+enum RobotState {
+  STATE_INIT,
+  STATE_TRACKING,
+  STATE_BLIND_TURN,
+  STATE_SAFE_STOP,
+  STATE_FINISH
+};
+RobotState currentState = STATE_INIT;
+
+float turnStartYaw  = 0.0f;
+int   turnDirection = 1; 
+unsigned long turnStartTime = 0;
+
+// ==============================
+// ГОНКА
+// ==============================
+int  lapCount       = 0;
+bool raceFinished   = false;
+bool estopActive    = false;
+bool isObstacleMode = false;
+long odometryStartLaps = 0;  // Колесные тики с момента начала контроля кругов
+
+// ==============================
+// УТИЛИТЫ
+// ==============================
+bool tcaSelect(uint8_t channel) {
+  if (channel > 7) return false;
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(1 << channel);
+  return (Wire.endTransmission() == 0);
+}
+
+bool tcaDisable() {
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(0);
+  return (Wire.endTransmission() == 0);
+}
+
+void setSteering(int angle) {
+  angle = constrain(angle, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+  steeringServo.write(angle);
+}
+
+int applyDeadband(int speed) {
+  if (speed == 0) return 0;
+  return map(abs(speed), 1, MOTOR_MAX_SPEED, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
+}
+
+void setMotorSpeed(int speed) {
+  speed = constrain(speed, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+  int mapped = applyDeadband(speed);
+  if (speed > 0) {
+    ledcWrite(1, 0);
+    ledcWrite(0, mapped);
+  } else if (speed < 0) {
+    ledcWrite(0, 0);
+    ledcWrite(1, mapped);
+  } else {
+    ledcWrite(0, 0);
+    ledcWrite(1, 0);
+  }
+}
+
+void applySpeedRamp() {
+  if (commandSpeed < targetSpeed) {
+    commandSpeed = min(commandSpeed + SPEED_RAMP_STEP, targetSpeed);
+  } else if (commandSpeed > targetSpeed) {
+    commandSpeed = max(commandSpeed - SPEED_RAMP_STEP, targetSpeed);
+  }
+  setMotorSpeed(commandSpeed);
+}
+
+void safeStop() {
+  targetSpeed        = 0;
+  commandSpeed       = 0;
+  setMotorSpeed(0);
+  targetSteering     = SERVO_CENTER;
+  setSteering(SERVO_CENTER);
+  lastCameraError    = 0;
+  integralError      = 0;
+  newCameraData      = false;
+  cameraObjectType   = 0;
+  closeWallCount     = 0;
+  directionConfirmed = false;
+  lastObjectType     = 0;
+  currentState       = STATE_SAFE_STOP;
+}
+
+// ==============================
+// E-STOP
+// ==============================
+void checkEStop() {
+  static unsigned long estopTriggerTime = 0;
+  static bool          estopArmed       = false;
+
+  bool pinLow = (digitalRead(ESTOP_PIN) == LOW);
+
+  if (pinLow && !estopArmed) {
+    estopArmed       = true;
+    estopTriggerTime = millis();
+    return;
+  }
+
+  if (estopArmed && !pinLow) {
+    estopArmed = false;
+    if (!estopActive) return;
+  }
+
+  if (estopArmed && (millis() - estopTriggerTime >= ESTOP_DEBOUNCE_MS)) {
+    if (!estopActive) {
+      estopActive = true;
+      safeStop();
+      Serial.println("=== АВАРИЙНАЯ ОСТАНОВКА (E-STOP) ===");
+    }
+  }
+
+  if (estopActive && !pinLow) {
+    estopActive = false;
+    estopArmed  = false;
+    currentState   = STATE_TRACKING;  // CRITICAL FIX: reset state to allow resume
+    lastIMUTime    = millis();
+    lastCameraTime = millis();
+    lastYaw        = yawAngle;
+    targetHeading  = yawAngle;
+    Serial.println("=== ПРОДОЛЖЕНИЕ ГОНКИ ===");
+  }
+
+  if (estopActive) safeStop();
+}
+
+// ==============================
+// ФИНИШ
+// ==============================
+void finishRace() {
+  safeStop();
+  raceFinished = true;
+  currentState = STATE_FINISH;
+  Serial.println("╔══════════════════════════╗");
+  Serial.println("║   ФИНИШ! 3 КРУГА!        ║");
+  Serial.println("╚══════════════════════════╝");
+}
+
+void handleFinishState() {
+  static unsigned long lastBlink = 0;
+  if (millis() - lastBlink > FINISH_BLINK_MS) {
+    lastBlink = millis();
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+  }
+  checkEStop();
+}
+
+// ==============================
+// IMU
+// ==============================
+void calibrateGyro() {
+  Serial.println("Калибровка гироскопа (3 сек)...");
+  Serial.println("Не двигай робота!");
+  float sum = 0;
+  for (int i = 0; i < GYRO_CALIB_SAMPLES; i++) {
+    tcaSelect(TCA_CH_IMU);
+    sensors_event_t accel, gyro, mag, temp;
+    icm.getEvent(&accel, &gyro, &temp, &mag);
+    tcaDisable();
+    sum += gyro.gyro.z;
+    delay(10);
+  }
+  gyroZbias = sum / GYRO_CALIB_SAMPLES;
+  Serial.print("Bias: "); Serial.println(gyroZbias, 6);
+  Serial.println("Калибровка завершена!");
+}
+
+void updateYaw() {
+  unsigned long now = millis();
+  if (lastIMUTime == 0) { lastIMUTime = now; return; }
+
+  float dt = (now - lastIMUTime) / 1000.0f;
+  lastIMUTime = now;
+  if (dt <= 0.0f) return;
+  if (dt > MAX_IMU_DT_SEC) dt = MAX_IMU_DT_SEC;
+
+  tcaSelect(TCA_CH_IMU);
+  sensors_event_t accel, gyro, mag, temp;
+  bool ok = icm.getEvent(&accel, &gyro, &temp, &mag);
+  tcaDisable();
+  if (!ok) return;
+
+  float correctedZ = gyro.gyro.z - gyroZbias;
+  if (fabsf(correctedZ) < 0.01f) correctedZ = 0.0f;
+
+  yawAngle += correctedZ * dt * (180.0f / PI);
+  while (yawAngle >  180) yawAngle -= 360;
+  while (yawAngle < -180) yawAngle += 360;
+
+  // Простая коррекция магнитометром (при необходимости откалибровать magBias)
+  float magX = mag.magnetic.x - magBiasX;
+  float magY = mag.magnetic.y - magBiasY;
+  float magHeading = atan2f(magY, magX) * (180.0f / PI);
+  float magError = magHeading - yawAngle;
+  while (magError >  180) magError -= 360;
+  while (magError < -180) magError += 360;
+  yawAngle += 0.02f * magError;
+  while (yawAngle >  180) yawAngle -= 360;
+  while (yawAngle < -180) yawAngle += 360;
+}
+
+void checkLapCount() {
+  float deltaYaw = yawAngle - lastYaw;
+  while (deltaYaw >  180) deltaYaw -= 360;
+  while (deltaYaw < -180) deltaYaw += 360;
+
+  totalRotation += deltaYaw;
+  lastYaw = yawAngle;
+
+  if (fabsf(totalRotation) >= LAP_DEGREES) {
+    lapCount++;
+    if (totalRotation > 0) totalRotation -= LAP_DEGREES;
+    else                   totalRotation += LAP_DEGREES;
+    Serial.print("=== КРУГ "); Serial.print(lapCount);
+    Serial.print(" ИЗ ");      Serial.print(TARGET_LAPS);
+    Serial.println(" ===");
+    
+    // Включаем алгоритм точной парковки (одометрия стартовой зоны)
+    if (lapCount >= TARGET_LAPS) {
+      odometryStartLaps = totalDistLeft;  // Захватываем значение отсчета, как пройдем линию
+      Serial.println(">>> АКТИВИРОВАН ОДОМЕТР ФИНИШНОЙ ЗОНЫ! Паркуемся... <<<");
+    }
+  }
+
+  // Если проехали нужное кол-во кругов, докатываемся N сантиметров (например, 70-80 см по тикам) внутри стартовой зоны
+  if (lapCount >= TARGET_LAPS) {
+      long distSinceLine = abs(totalDistLeft - odometryStartLaps);
+      if (distSinceLine > (FINISH_ZONE_CM * 40)) { // ~40 тиков энкодера на 1 см дистанции (подберите коэффициент!)
+          finishRace();
+      } else {
+          // Плавное торможение перед финишем
+          targetSpeed = MOTOR_TURN_SLOW; 
+          commandSpeed = min(commandSpeed, MOTOR_TURN_SLOW);
+      }
+  }
+}
+
+// ==============================
+// ОДОМЕТРИЯ
+// ==============================
+int readEncoder(uint8_t tcaChannel) {
+  if (!tcaSelect(tcaChannel)) return -1;
+  Wire.beginTransmission(AS5600_ADDRESS);
+  Wire.write(0x0E);
+  if (Wire.endTransmission(false) != 0) {
+    tcaDisable();
+    return -1;
+  }
+  uint8_t got = Wire.requestFrom((uint8_t)AS5600_ADDRESS, (uint8_t)2);
+  if (got >= 2 && Wire.available() >= 2) {
+    int high = Wire.read();
+    int low  = Wire.read();
+    tcaDisable();
+    return ((high & 0x0F) << 8) | low;
+  }
+  tcaDisable();
+  return -1;
+}
+
+void updateOdometry() {
+  if (encLeft < 0 || encRight < 0) {
+    encErrorCount++;
+    if (encErrorCount == 10) {
+      Serial.println("ALARM: ПОТЕРЯ ЭНКОДЕРОВ!");
+      encLeftPrev  = (encLeft  < 0) ? 0 : encLeft;
+      encRightPrev = (encRight < 0) ? 0 : encRight;
+    }
+    if (encErrorCount >= ENCODER_FAIL_STOP) {
+      encoderFaultActive = true;
+      Serial.println("CRITICAL: ЭНКОДЕРЫ OFFLINE — SAFE STOP");
+      safeStop();
+    }
+    return;
+  }
+
+  if (encoderFaultActive) {
+    encoderFaultActive = false;
+    Serial.println("INFO: ЭНКОДЕРЫ ВОССТАНОВЛЕНЫ, движение разрешено");
+  }
+
+  if (encErrorCount >= 10) {
+    Serial.println("ЭНКОДЕРЫ ВОССТАНОВЛЕНЫ!");
+    encLeftPrev  = encLeft;
+    encRightPrev = encRight;
+  }
+  encErrorCount = 0;
+
+  int deltaLeft = encLeft - encLeftPrev;
+  if (deltaLeft >  2048) deltaLeft -= 4096;
+  if (deltaLeft < -2048) deltaLeft += 4096;
+
+  int deltaRight = encRight - encRightPrev;
+  if (deltaRight >  2048) deltaRight -= 4096;
+  if (deltaRight < -2048) deltaRight += 4096;
+
+  totalDistLeft  += deltaLeft;
+  totalDistRight += deltaRight;
+
+  encLeftPrev  = encLeft;
+  encRightPrev = encRight;
+}
+
+// ==============================
+// КАМЕРА (3 поля: errorX,distance,objectType)
+// ==============================
+void readCameraData() {
+  newCameraData = false;
+
+  while (Serial2.available()) {
+    char c = (char)Serial2.read();
+
+    if (c == '\r') continue;
+
+    if (c == '\n') {
+      uartBuf[uartBufPos] = '\0';
+      uartBufPos = 0;
+      if (strlen(uartBuf) == 0) continue;
+
+      char *comma1 = strchr(uartBuf, ',');
+      if (!comma1) continue;
+      *comma1 = '\0';
+      char *comma2 = strchr(comma1 + 1, ',');
+      if (!comma2) continue;
+      *comma2 = '\0';
+
+      int parsedErrorX     = atoi(uartBuf);
+      int parsedDistance   = atoi(comma1 + 1);
+      int parsedObjectType = atoi(comma2 + 1);
+
+      if (parsedErrorX >= -160 && parsedErrorX <= 160 &&
+          parsedDistance >= 0 && parsedDistance <= 10000) {
+        cameraErrorX     = parsedErrorX;
+        cameraDistance   = parsedDistance;
+        cameraObjectType = parsedObjectType;
+        lastCameraTime   = millis();
+        cameraOnline     = true;
+        newCameraData    = true;
+        lastKnownDistance = cameraDistance;
+      }
+
+    } else {
+      if (uartBufPos < UART_BUF_SIZE - 1) {
+        uartBuf[uartBufPos++] = c;
+      } else {
+        uartBufPos = 0;
+      }
+    }
+  }
+
+  if (millis() - lastCameraTime > CAMERA_TIMEOUT) {
+    if (cameraOnline) Serial.println("WARN: Камера потеряна! Переход на курс по гироскопу.");
+    cameraOnline     = false;
+    cameraObjectType = 0;
+  }
+}
+
+// ==============================
+// УПРАВЛЕНИЕ
+// ==============================
+void enterBlindTurn(int direction) {
+  currentState      = STATE_BLIND_TURN;
+  turnStartYaw      = yawAngle;
+  turnDirection     = direction;
+  turnStartTime     = millis();
+  turnStartDistLeft  = totalDistLeft;
+  turnStartDistRight = totalDistRight;
+  integralError      = 0;
+  closeWallCount     = 0;
+  Serial.print(">>> СТАРТ СЛЕПОГО ПОВОРОТА | В сторону: ");
+  Serial.println(turnDirection == 1 ? "ПРАВО" : "ЛЕВО");
+}
+
+bool updateBlindTurn() {
+  if (millis() - turnStartTime > BLIND_TURN_TIMEOUT) {
+    currentState    = STATE_TRACKING;
+    targetHeading   = yawAngle;
+    closeWallCount  = 0;
+    lastCameraError = 0;
+    Serial.println(">>> ТАЙМАУТ ПОВОРОТА (АВАРИЙНЫЙ ВЫХОД) <<<");
+    return true;
+  }
+
+  targetSteering = (turnDirection == 1) ? SERVO_MAX_RIGHT : SERVO_MAX_LEFT;
+  targetSpeed    = MOTOR_TURN_SLOW;
+
+  float turnedAngle = yawAngle - turnStartYaw;
+  while (turnedAngle >  180) turnedAngle -= 360;
+  while (turnedAngle < -180) turnedAngle += 360;
+
+  long distTraveled = ((totalDistLeft - turnStartDistLeft) + (totalDistRight - turnStartDistRight)) / 2;
+
+  if (fabsf(turnedAngle) >= BLIND_TURN_ANGLE || labs(distTraveled) > ENCODER_TURN_TICKS) {
+    currentState    = STATE_TRACKING;
+    targetHeading   = yawAngle;
+    closeWallCount  = 0;
+    lastCameraError = 0;
+    Serial.println(">>> КОНЕЦ СЛЕПОГО ПОВОРОТА <<<");
+    return true;
+  }
+  return false;
+}
+
+void updateControl() {
+  if (raceFinished) return;
+  if (encoderFaultActive) { safeStop(); return; }
+
+  // SAFE_STOP state keeps holding until cleared
+  if (currentState == STATE_SAFE_STOP) {
+    targetSpeed   = 0;
+    targetSteering= SERVO_CENTER;
+    return;
+  }
+
+  // BLIND_TURN state
+  if (currentState == STATE_BLIND_TURN) {
+    updateBlindTurn();
+    return;
+  }
+
+  // TRACKING with camera offline -> курс по гироскопу
+  if (!cameraOnline) {
+    float headingError = targetHeading - yawAngle;
+    while (headingError >  180) headingError -= 360;
+    while (headingError < -180) headingError += 360;
+    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * headingError), SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+    targetSpeed    = (lastKnownDistance < 80) ? MOTOR_TURN_SLOW : MOTOR_TURN_FAST;
+    return;
+  }
+
+  // TRACKING with camera online
+  if (cameraObjectType == 1) { globalTrackDirection =  1; directionConfirmed = true; }
+  if (cameraObjectType == 2) { globalTrackDirection = -1; directionConfirmed = true; }
+
+  if (cameraDistance > 0 && cameraDistance < 35 && directionConfirmed) closeWallCount++; else closeWallCount = 0;
+
+  if (closeWallCount >= 3) {
+    enterBlindTurn(globalTrackDirection);
+    return;
+  }
+
+  // Обнуляем динамическое смещение для Open Challenge
+  dynamicErrorOffset = 0;
+
+  // Динамическое смещение для ОБЪЕЗДА ПРЕПЯТСТВИЙ (Obstacle Challenge)
+  // Объезжаем только если мод активен и мы видим цилиндр
+  if (isObstacleMode && (cameraObjectType == 3 || cameraObjectType == 4)) {
+    if (cameraDistance > 0 && cameraDistance < 60) {
+      if (cameraObjectType == 3) {
+        // Красный цилиндр (Red) -> смещение -35 (ехать левее объекта, оставляя его справа)
+        dynamicErrorOffset = -35; 
+      } else if (cameraObjectType == 4) {
+        // Зелёный цилиндр (Green) -> смещение +35 (ехать правее объекта, оставляя его слева)
+        dynamicErrorOffset = 35;
+      }
+    }
+  }
+
+  // PID по камере / объекту
+  if (cameraObjectType != 0) {
+    if (newCameraData) {
+      int avoidError = cameraErrorX;
+      
+      // Игнорируем хардкорные смещения, оставляем только плавное:
+      avoidError += dynamicErrorOffset;
+
+      if (cameraObjectType != lastObjectType) {
+        integralError   = 0;
+        lastCameraError = avoidError;
+      }
+      lastObjectType = cameraObjectType;
+
+      int errorDerivative = avoidError - lastCameraError;
+      integralError += avoidError;
+      integralError = constrain(integralError, -500, 500); // Урезаем windup до 500 для безопасности
+      lastCameraError = avoidError;
+
+      int steeringCorrection = (int)(PID_KP * avoidError + PID_KI * integralError + PID_KD * errorDerivative);
+      targetSteering = constrain(SERVO_CENTER + steeringCorrection, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+    }
+    targetHeading = yawAngle;
+
+  } else {
+    float headingError = targetHeading - yawAngle;
+    while (headingError >  180) headingError -= 360;
+    while (headingError < -180) headingError += 360;
+    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * headingError), SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+  }
+
+  // Динамическая скорость
+  int turnAmount = abs(targetSteering - SERVO_CENTER);
+  if      (turnAmount > 30) targetSpeed = MOTOR_TURN_SLOW;
+  else if (turnAmount > 15) targetSpeed = MOTOR_TURN_FAST;
+  else                      targetSpeed = MOTOR_MAX_SPEED;
+
+  if (cameraDistance > 0 && cameraDistance < 100) {
+    int rampSpeed = map(cameraDistance, 35, 100, MOTOR_TURN_SLOW, MOTOR_MAX_SPEED);
+    rampSpeed = constrain(rampSpeed, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
+    targetSpeed = min(targetSpeed, rampSpeed);
+  }
+}
+
+// ==============================
+// LIVE TUNING
+// ==============================
+void checkSerialCommands() {
+  static char    cmdBuf[16];
+  static uint8_t cmdPos = 0;
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      cmdBuf[cmdPos] = '\0';
+      if (cmdPos > 1) {
+        char  type = cmdBuf[0];
+        float val  = atof(&cmdBuf[1]);
+        if (type == 'P' || type == 'p') { PID_KP = val; Serial.print("Kp = "); Serial.println(PID_KP); }
+        if (type == 'D' || type == 'd') { PID_KD = val; Serial.print("Kd = "); Serial.println(PID_KD); }
+        if (type == 'I' || type == 'i') { PID_KI = val; Serial.print("Ki = "); Serial.println(PID_KI); integralError = 0; }
+      }
+      cmdPos = 0;
+    } else if (cmdPos < 15) {
+      cmdBuf[cmdPos++] = c;
+    }
+  }
+}
+
+// ==============================
+// SETUP
+// ==============================
+void setup() {
+  Serial.begin(115200);
+  Serial.setTimeout(10);
+  delay(500);
+
+  Serial.println("=== WRO V8.7 RACE DAY PRO (Obstacle/Open) ===");
+
+  pinMode(ESTOP_PIN, INPUT_PULLUP);
+  pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  isObstacleMode = (digitalRead(MODE_SWITCH_PIN) == LOW);
+  Serial.print("РЕЖИМ ГОНКИ: "); 
+  Serial.println(isObstacleMode ? "OBSTACLE CHALLENGE (ПРЕПЯТСТВИЯ)" : "OPEN CHALLENGE (СКОРОСТЬ)");
+
+  Serial2.begin(115200, SERIAL_8N1, UART_RX, UART_TX);
+  Serial2.setTimeout(10);
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000);
+  Wire.setWireTimeout(3000, true); // I2C Hardware Timeout 3мс с автоматическим сбросом шины
+
+  steeringServo.attach(SERVO_PIN, 500, 2500);
+  setSteering(SERVO_CENTER);
+
+  pinMode(MOTOR_R_EN, OUTPUT);
+  pinMode(MOTOR_L_EN, OUTPUT);
+  digitalWrite(MOTOR_R_EN, HIGH);
+  digitalWrite(MOTOR_L_EN, HIGH);
+  ledcSetup(0, 20000, 8); ledcAttachPin(MOTOR_R_PWM, 0);
+  ledcSetup(1, 20000, 8); ledcAttachPin(MOTOR_L_PWM, 1);
+  setMotorSpeed(0);
+
+  if (!tcaSelect(TCA_CH_IMU) || !icm.begin_I2C()) {
+    Serial.println("ICM-20948 ОШИБКА!");
+    while (true);
+  }
+  tcaDisable();
+
+  calibrateGyro();
+
+  lastIMUTime    = millis();
+  lastCameraTime = millis();
+  targetHeading  = yawAngle;
+
+  currentState = STATE_INIT;
+  Serial.println("=== СИСТЕМА ГОТОВА ===");
+}
+
+// ==============================
+// LOOP
+// ==============================
+void loop() {
+  checkSerialCommands();
+
+  if (raceFinished) { handleFinishState(); return; }
+
+  static unsigned long lastLoopTime = 0;
+  unsigned long now = millis();
+  if (now - lastLoopTime < LOOP_INTERVAL) return;
+  lastLoopTime = now;
+
+  checkEStop();
+  if (estopActive) { currentState = STATE_SAFE_STOP; safeStop(); return; }
+
+  readCameraData();
+  updateYaw();
+  checkLapCount();
+
+  encLeft  = readEncoder(TCA_CH_ENC_LEFT);
+  encRight = readEncoder(TCA_CH_ENC_RIGHT);
+  updateOdometry();
+  if (encoderFaultActive) { currentState = STATE_SAFE_STOP; return; }
+
+  if (currentState == STATE_INIT) {
+    currentState = STATE_TRACKING; // после инициализации переходим в трекинг
+  }
+
+  updateControl();
+  setSteering(targetSteering);
+  applySpeedRamp();
+
+  static unsigned long lastPrintTime = 0;
+  if (millis() - lastPrintTime >= PRINT_INTERVAL) {
+    lastPrintTime = millis();
+    Serial.print("Yaw: ");    Serial.print(yawAngle, 1);
+    Serial.print(" | Lap: "); Serial.print(lapCount);
+    Serial.print(" | Dist: "); Serial.print(cameraDistance);
+    Serial.print(" | State: ");
+    if (currentState == STATE_INIT) Serial.print("INIT");
+    else if (currentState == STATE_TRACKING) Serial.print("TRACK");
+    else if (currentState == STATE_BLIND_TURN) Serial.print("BLIND");
+    else if (currentState == STATE_SAFE_STOP) Serial.print("SAFE");
+    else if (currentState == STATE_FINISH) Serial.print("FINISH");
+    else Serial.print("?");
+    Serial.print(" | DirConfirmed: "); Serial.println(directionConfirmed ? "YES" : "NO");
+  }
+}
+
+
+======================================
+FILE: openmv_main.py
+======================================
+import sensor, image, time, math
+from pyb import UART, LED
+
+# ==========================================
+# WRO Future Engineers — OpenMV Vision Code
+# ==========================================
+
+# Настройка сенсора
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565) # Цветной формат
+sensor.set_framesize(sensor.QQVGA)  # 160x120 - идеальный баланс скорости и качества
+sensor.skip_frames(time = 2000)
+sensor.set_auto_gain(False)         # ВЫКЛЮЧИТЬ! Иначе цвета "поплывут" от освещения
+sensor.set_auto_whitebal(False)     # ВЫКЛЮЧИТЬ!
+
+# Настройка UART (Baudrate должно совпадать с ESP32: 115200)
+# На OpenMV H7 Plus: TX = P4, RX = P5
+uart = UART(3, 115200, timeout_char=1000)
+
+led = LED(1) # Красный светодиод для индикации
+
+# ==========================================
+# ПОРОГИ ЦВЕТОВ (НАСТРАИВАТЬ НА ТРЕКЕ!!!)
+# ==========================================
+# Формат: (L Min, L Max, A Min, A Max, B Min, B Max)
+THRESHOLD_ORANGE = (50, 80,  20,  60,  20,  70)  # Type 1 (Направление)
+THRESHOLD_BLUE   = (20, 50, -20,  20, -60, -20)  # Type 2 (Направление)
+THRESHOLD_RED    = (30, 60,  30,  80,  10,  60)  # Type 3 (Препятствие красное)
+THRESHOLD_GREEN  = (30, 70, -60, -20,  10,  50)  # Type 4 (Препятствие зеленое)
+THRESHOLD_WALL   = ( 0, 20, -10,  10, -10,  10)  # Черный цвет бортов для слепых поворотов
+
+CENTER_X = 80 # Середина экрана для QQVGA (160 / 2)
+
+clock = time.clock()
+
+def get_distance_cm(blob):
+    # Фокусное расстояние / ширину пикселей.
+    # КОНСТАНТУ 2000 НУЖНО ПОДОБРАТЬ! Поставьте блок на 20см и поменяйте константу, чтобы выдавало 20.
+    if blob.w() == 0: return 999
+    return int(2000 / blob.w()) 
+
+while(True):
+    clock.tick()
+    img = sensor.snapshot()
+    
+    # Дефолтные значения для отправки в ESP
+    error_x = 0
+    distance = 999
+    obj_type = 0 
+    
+    best_blob = None
+    max_pixels = 0
+    
+    # 1. Поиск важных цветных объектов (Препятствия и метки направления)
+    # Ищем объединяя 4 цвета. pixels_threshold отсекает мелкий шум.
+    blobs = img.find_blobs([THRESHOLD_ORANGE, THRESHOLD_BLUE, THRESHOLD_RED, THRESHOLD_GREEN], 
+                             pixels_threshold=100, area_threshold=100, merge=True)
+                             
+    for blob in blobs:
+        if blob.pixels() > max_pixels:
+            best_blob = blob
+            max_pixels = blob.pixels()
+            
+    if best_blob:
+        # Если нашли цветной объект, определяем его тип по битовой маске (code)
+        if best_blob.code() == 1:   obj_type = 1 # Orange
+        elif best_blob.code() == 2: obj_type = 2 # Blue
+        elif best_blob.code() == 4: obj_type = 3 # Red
+        elif best_blob.code() == 8: obj_type = 4 # Green
+        
+        # Расчет ошибки для рулежки ESP32
+        error_x = best_blob.cx() - CENTER_X
+        # Расчет дистанции
+        distance = get_distance_cm(best_blob)
+        
+        # Отрисовка на экране IDE для удобной отладки
+        img.draw_rectangle(best_blob.rect(), color=(255, 255, 255))
+        img.draw_cross(best_blob.cx(), best_blob.cy())
+        img.draw_string(best_blob.x(), best_blob.y() - 10, "T:%d D:%d" % (obj_type, distance), color=(255,255,255))
+
+    else:
+        # 2. Если препятствий нет, ищем черные стены (для функции Blind Turn)
+        # Ищем черную стену в нижней половине кадра
+        wall_blobs = img.find_blobs([THRESHOLD_WALL], roi=(0, 60, 160, 60), pixels_threshold=200, merge=True)
+        if wall_blobs:
+            # Берем самую низкую стену (ближайшую к нам по Y)
+            closest_wall = max(wall_blobs, key=lambda b: b.y())
+            distance = get_distance_cm(closest_wall)
+            obj_type = 0 # Черная стена не является динамическим препятствием
+            error_x = 0
+            
+            img.draw_rectangle(closest_wall.rect(), color=(255, 0, 0))
+            img.draw_string(closest_wall.x(), closest_wall.y() - 10, "WALL D:%d" % distance, color=(255,0,0))
+    
+    # 3. Отправка данных на ESP32!
+    uart_string = "%d,%d,%d\n" % (error_x, distance, obj_type)
+    uart.write(uart_string)
+    
+    # Отладка в консоль (закомментировать на самих соревнованиях для ускорения FPS)
+    # print("FPS: %f | TX: %s" % (clock.fps(), uart_string.strip()))
+
+
+======================================
+FILE: README.md
+======================================
+# WRO Project Pack
+
+This folder contains firmware, diagnostics, and operation documents for the WRO robot.
+
+## Core firmware
+- eps323.cpp — Main robot firmware
+- scanerI2C.cpp — I2C/TCA diagnostics scanner
+- WRO_Config_Template.h — Tunable parameters template
+
+## Operation docs
+- WRO_Robot_Master_Checklist_2026-03-27.md
+- WRO_Quick_Race_Checklist.md
+- WRO_Wiring_Map.md
+- WRO_OpenMV_UART_Protocol.md
+
+## Logs and templates
+- WRO_Test_Log.csv
+- WRO_PID_Tuning_Log.csv
+- WRO_Preflight_Log.md
+- WRO_Release_Notes_Template.md
+
+## Recommended workflow
+1. Run scanner and verify channel map.
+2. Upload main firmware.
+3. Validate E-Stop and camera timeout behavior.
+4. Run short track tests and record in logs.
+5. Tune Kp/Kd with controlled runs.
+
+
+======================================
+FILE: scanerI2C.cpp
+======================================
+/*
+ * WRO Future Engineers - Умный сканер I2C
+ * Версия: Финальная
+ * Железо: ESP32 DevKit, TCA9548A, AS5600 (x2), ICM-20948
+ */
+
+#include <Wire.h>
+
+// ==============================
+// ПИНЫ И АДРЕСА
+// ==============================
+#define I2C_SDA      21
+#define I2C_SCL      22
+#define TCA_ADDRESS  0x70
+
+// ==============================
+// ОЖИДАЕМАЯ КАРТА КАНАЛОВ
+// ==============================
+// Канал 0 -> ICM-20948 (0x69)
+// Канал 1 -> AS5600 левый (0x36)
+// Канал 2 -> AS5600 правый (0x36)
+// Канал 3 -> VL53L1X левый (0x29)
+// Канал 4 -> VL53L1X правый (0x29)
+// Каналы 5-7 -> пусто
+
+// ==============================
+// ЦЕЛЕВЫЕ АДРЕСА (Targeted Scan)
+// ==============================
+const uint8_t targetAddresses[] = {0x36, 0x68, 0x69, 0x28, 0x29};
+const int     numTargets = sizeof(targetAddresses) / sizeof(targetAddresses[0]);
+
+const int16_t expectedAddressByChannel[8] = {
+  0x69,  // CH0: ICM-20948
+  0x36,  // CH1: AS5600 left
+  0x36,  // CH2: AS5600 right
+  0x29,  // CH3: VL53L1X left
+  0x29,  // CH4: VL53L1X right
+  -1, -1, -1
+};
+
+// ==============================
+// МУЛЬТИПЛЕКСОР
+// ==============================
+bool tcaSelect(uint8_t channel) {
+  if (channel > 7) return false;
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(1 << channel);
+  return (Wire.endTransmission() == 0);
+}
+
+bool tcaDisable() {
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(0);
+  return (Wire.endTransmission() == 0);
+}
+
+// ==============================
+// ОПРЕДЕЛЕНИЕ ДАТЧИКА ПО АДРЕСУ
+// ==============================
+String getSensorName(uint8_t address) {
+  switch (address) {
+    case 0x36: return "AS5600 (энкодер)";
+    case 0x68: return "ICM-20948 (IMU, AD0=GND)";
+    case 0x69: return "ICM-20948 (IMU, AD0=VCC)";
+    case 0x28: return "BNO085 (SA0=GND)";
+    case 0x29: return "BNO085 (SA0=VCC)";
+    default:   return "неизвестный";
+  }
+}
+
+// ==============================
+// ПРОВЕРКА ОДНОГО АДРЕСА
+// ==============================
+bool checkAddress(uint8_t address, uint8_t retries = 2) {
+  for (uint8_t i = 0; i < retries; i++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) return true;
+    delay(1);
+  }
+  return false;
+}
+
+// ==============================
+// ИТОГОВЫЙ ОТЧЁТ
+// ==============================
+void printExpectedMap() {
+  Serial.println("\n--- Ожидаемая карта каналов ---");
+  Serial.println("  Канал 0 -> ICM-20948  адрес 0x69");
+  Serial.println("  Канал 1 -> AS5600     адрес 0x36 (левый)");
+  Serial.println("  Канал 2 -> AS5600     адрес 0x36 (правый)");
+  Serial.println("  Каналы 3-7 -> пусто");
+  Serial.println("--------------------------------");
+}
+
+// ==============================
+// SETUP
+// ==============================
+void setup() {
+  Serial.begin(115200);
+
+  // Защита от зависания без ноутбука
+  unsigned long t = millis();
+  while (!Serial && millis() - t < 3000);
+
+  delay(500);
+  Serial.println("\n╔═══════════════════════════════╗");
+  Serial.println("║   Умный сканер I2C WRO v2.0   ║");
+  Serial.println("╚═══════════════════════════════╝");
+
+  // I2C на боевой частоте
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000);
+  Serial.println("Шина I2C запущена (400 кГц).");
+
+  // Печатаем ожидаемую карту
+  printExpectedMap();
+}
+
+// ==============================
+// LOOP
+// ==============================
+void loop() {
+  Serial.println("\n=== Начало сканирования ===");
+
+  // --------------------------------------------------
+  // ШАГ 1: Проверка мультиплексора TCA9548A
+  // --------------------------------------------------
+  Serial.print("Проверка TCA9548A (0x70)... ");
+  if (!checkAddress(TCA_ADDRESS)) {
+    Serial.println("НЕ НАЙДЕН!");
+    Serial.println("Проверь подключение:");
+    Serial.println("  VCC  -> 3.3V");
+    Serial.println("  GND  -> GND");
+    Serial.println("  SDA  -> GPIO 21");
+    Serial.println("  SCL  -> GPIO 22");
+    Serial.println("  A0/A1/A2 -> GND (адрес 0x70)");
+    delay(3000);
+    return;
+  }
+  Serial.println("OK");
+
+  // --------------------------------------------------
+  // ШАГ 2: Сканирование каналов
+  // --------------------------------------------------
+  int totalFound  = 0;
+  int totalErrors = 0;
+
+  for (uint8_t channel = 0; channel < 8; channel++) {
+    if (!tcaSelect(channel)) {
+      Serial.print("Канал [");
+      Serial.print(channel);
+      Serial.println("]: ОШИБКА TCA (нет ACK)");
+      totalErrors++;
+      continue;
+    }
+    delay(2); // Пауза для физического открытия ключей
+
+    Serial.print("Канал [");
+    Serial.print(channel);
+    Serial.print("]: ");
+
+    int devicesFound = 0;
+    bool expectedFound = false;
+    int16_t expectedAddress = expectedAddressByChannel[channel];
+
+    for (int i = 0; i < numTargets; i++) {
+      uint8_t address = targetAddresses[i];
+
+      if (checkAddress(address)) {
+        Serial.print("0x");
+        if (address < 16) Serial.print("0");
+        Serial.print(address, HEX);
+        Serial.print(" ");
+        Serial.print(getSensorName(address));
+        if (expectedAddress >= 0 && address == expectedAddress) {
+          expectedFound = true;
+        }
+        if (expectedAddress < 0) {
+          Serial.print(" [НЕОЖИДАННО НА ПУСТОМ КАНАЛЕ]");
+          totalErrors++;
+        }
+        Serial.print("  ");
+        devicesFound++;
+        totalFound++;
+      }
+    }
+
+    if (devicesFound == 0) {
+      Serial.print("пусто");
+
+      if (expectedAddress >= 0) {
+        Serial.print("  <- ВНИМАНИЕ: ожидался адрес 0x");
+        if (expectedAddress < 16) Serial.print("0");
+        Serial.print((uint8_t)expectedAddress, HEX);
+        Serial.print(" (");
+        Serial.print(getSensorName((uint8_t)expectedAddress));
+        Serial.print(")!");
+        totalErrors++;
+      }
+    } else if (expectedAddress >= 0 && !expectedFound) {
+      Serial.print(" <- ВНИМАНИЕ: найдено устройство, но не ожидаемый адрес 0x");
+      if (expectedAddress < 16) Serial.print("0");
+      Serial.print((uint8_t)expectedAddress, HEX);
+      totalErrors++;
+    }
+
+    Serial.println();
+  }
+
+  // Безопасное закрытие всех каналов
+  if (!tcaDisable()) {
+    Serial.println("WARN: Не удалось закрыть каналы TCA9548A");
+    totalErrors++;
+  }
+
+  // --------------------------------------------------
+  // ШАГ 3: Итоговый отчёт
+  // --------------------------------------------------
+  Serial.println("\n--- Итог сканирования ---");
+  Serial.print("Найдено датчиков: ");
+  Serial.println(totalFound);
+  Serial.print("Проблем: ");
+  Serial.println(totalErrors);
+
+  if (totalErrors == 0 && totalFound >= 3) {
+    Serial.println("СТАТУС: ВСЕ ДАТЧИКИ В НОРМЕ — можно заливать основной код!");
+  } else if (totalErrors > 0) {
+    Serial.println("СТАТУС: ЕСТЬ ПРОБЛЕМЫ — проверь подключение датчиков.");
+  } else {
+    Serial.println("СТАТУС: Датчиков меньше ожидаемого — проверь каналы 0,1,2.");
+  }
+
+  Serial.println("=== Следующее сканирование через 5 сек ===");
+  delay(5000);
+}
+
+======================================
+FILE: WRO_All_Code_Combined_2026-03-28.txt
+======================================
+===== FILE: eps323.cpp =====
+/*
+ * WRO Future Engineers — Главный код ESP32
+ * Версия 8.7 — RACE DAY PRO (Obstacle & Open Challenge)
+ *
+ * Железо: ESP32 DevKitC V4, BTS7960, JX PDI-6221MG,
+ *         TCA9548A, ICM-20948, AS5600 x2, OpenMV H7 Plus,
+ *         VL53L1X x2 (через TCA CH3/CH4)
+ *
+ * Ключевые изменения 8.7:
+ * - Поддержка двух режимов (Open/Obstacle Challenge) через тумблер (PIN 4).
+ * - Динамическое смещение (Dynamic Offset) ПИД для плавного объезда столбов.
+ * - Одометрия финишной зоны: точная остановка ровно через 3 круга.
+ * - Hardware I2C Timeout (3000 мс) для защиты от зависаний TCA/AS5600 от помех мотора.
+ * - Конечный автомат: INIT, TRACKING, BLIND_TURN, SAFE_STOP, FINISH
+ * - 3-польный UART протокол: errorX,distance,objectType\n
+ * - Жёсткая защита: dt clamp IMU, остаток поворота для кругов,
+ *   блокировка движения при критической потере энкодеров.
+ */
+
+#include <Wire.h>
+#include <ESP32Servo.h>
+#include <Adafruit_ICM20948.h>
+#include <Adafruit_Sensor.h>
+#include <math.h>
+
+// ==============================
+// ПИНЫ
+// ==============================
+#define I2C_SDA          21
+#define I2C_SCL          22
+#define SERVO_PIN        18
+#define MOTOR_R_EN       19
+#define MOTOR_L_EN       23
+#define MOTOR_R_PWM       5
+#define MOTOR_L_PWM      14
+#define UART_RX          16
+#define UART_TX          17
+#define ESTOP_PIN        32
+#define MODE_SWITCH_PIN   4  // ТУМБЛЕР РЕЖИМА: LOW = OBSTACLE, HIGH = OPEN
+#define LED_PIN           2
+
+// ==============================
+// НАСТРОЙКИ
+// ==============================
+#define SERVO_CENTER     90
+#define SERVO_MAX_RIGHT 135
+#define SERVO_MAX_LEFT   45
+#define MOTOR_MAX_SPEED 150
+#define MOTOR_TURN_FAST 120
+#define MOTOR_TURN_SLOW  80
+#define MOTOR_MIN_SPEED  35
+
+#define TARGET_LAPS       3
+#define LAP_DEGREES     360.0f
+#define FINISH_ZONE_CM  100  // Расстояние стартовой зоны для плавной остановки
+
+// ==============================
+// PID (камера/курс) и гироскоп
+// ==============================
+float PID_KP  = 0.50f;
+float PID_KI  = 0.001f;
+float PID_KD  = 0.10f;
+float GYRO_KP = 1.20f;
+float integralError = 0.0f;
+int dynamicErrorOffset = 0;  // Смещение ПИД для объезда препятствий
+
+// ==============================
+// I2C
+// ==============================
+#define TCA_ADDRESS      0x70
+#define AS5600_ADDRESS   0x36
+#define TCA_CH_IMU        0
+#define TCA_CH_ENC_LEFT   1
+#define TCA_CH_ENC_RIGHT  2
+// TCA_CH_VL53_LEFT/RIGHT (3,4) reserved for future distance sensors
+
+// ==============================
+// ТАЙМАУТЫ И ОДОМЕТРИЯ
+// ==============================
+#define CAMERA_TIMEOUT       500
+#define PRINT_INTERVAL       200
+#define LOOP_INTERVAL         10
+#define GYRO_CALIB_SAMPLES   300
+#define FINISH_BLINK_MS      500
+#define ESTOP_DEBOUNCE_MS     20
+#define MAX_IMU_DT_SEC     0.05f
+#define ENCODER_FAIL_STOP    50
+#define SPEED_RAMP_STEP       8
+#define BLIND_TURN_TIMEOUT  3000
+#define BLIND_TURN_ANGLE      85.0f
+#define ENCODER_TURN_TICKS  3000
+
+// ==============================
+// ОБЪЕКТЫ
+// ==============================
+Servo steeringServo;
+Adafruit_ICM20948 icm;
+
+// ==============================
+// КАМЕРА
+// ==============================
+int   cameraErrorX      = 0;
+int   cameraDistance    = 0;
+int   cameraObjectType  = 0; // 0=none,1=orange,2=blue,3=red,4=green
+bool  cameraOnline      = false;
+bool  newCameraData     = false;
+unsigned long lastCameraTime = 0;
+int   lastKnownDistance = 999;
+int   lastObjectType    = 0;
+
+#define UART_BUF_SIZE 32
+static char    uartBuf[UART_BUF_SIZE];
+static uint8_t uartBufPos = 0;
+
+// ==============================
+// ГИРОСКОП / МАГНИТОМЕТР
+// ==============================
+float yawAngle      = 0.0f;
+float gyroZbias     = 0.0f;
+float totalRotation = 0.0f;
+float lastYaw       = 0.0f;
+unsigned long lastIMUTime = 0;
+float targetHeading = 0.0f;
+float magBiasX      = 0.0f;
+float magBiasY      = 0.0f;
+
+// ==============================
+// ОДОМЕТРИЯ
+// ==============================
+int  encLeft        = 0;
+int  encRight       = 0;
+int  encLeftPrev    = 0;
+int  encRightPrev   = 0;
+long totalDistLeft  = 0;
+long totalDistRight = 0;
+int  encErrorCount  = 0;
+bool encoderFaultActive = false;
+
+// ==============================
+// СОСТОЯНИЯ И УПРАВЛЕНИЕ
+// ==============================
+int  targetSteering  = SERVO_CENTER;
+int  targetSpeed     = 0;
+int  commandSpeed    = 0; // после плавного ramp
+int  lastCameraError = 0;
+
+int  globalTrackDirection = 1; 
+bool directionConfirmed   = false; 
+
+long turnStartDistLeft    = 0;
+long turnStartDistRight   = 0;
+int  closeWallCount       = 0; 
+
+enum RobotState {
+  STATE_INIT,
+  STATE_TRACKING,
+  STATE_BLIND_TURN,
+  STATE_SAFE_STOP,
+  STATE_FINISH
+};
+RobotState currentState = STATE_INIT;
+
+float turnStartYaw  = 0.0f;
+int   turnDirection = 1; 
+unsigned long turnStartTime = 0;
+
+// ==============================
+// ГОНКА
+// ==============================
+int  lapCount       = 0;
+bool raceFinished   = false;
+bool estopActive    = false;
+bool isObstacleMode = false;
+long odometryStartLaps = 0;  // Колесные тики с момента начала контроля кругов
+
+// ==============================
+// УТИЛИТЫ
+// ==============================
+bool tcaSelect(uint8_t channel) {
+  if (channel > 7) return false;
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(1 << channel);
+  return (Wire.endTransmission() == 0);
+}
+
+bool tcaDisable() {
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(0);
+  return (Wire.endTransmission() == 0);
+}
+
+void setSteering(int angle) {
+  angle = constrain(angle, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+  steeringServo.write(angle);
+}
+
+int applyDeadband(int speed) {
+  if (speed == 0) return 0;
+  return map(abs(speed), 1, MOTOR_MAX_SPEED, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
+}
+
+void setMotorSpeed(int speed) {
+  speed = constrain(speed, -MOTOR_MAX_SPEED, MOTOR_MAX_SPEED);
+  int mapped = applyDeadband(speed);
+  if (speed > 0) {
+    ledcWrite(1, 0);
+    ledcWrite(0, mapped);
+  } else if (speed < 0) {
+    ledcWrite(0, 0);
+    ledcWrite(1, mapped);
+  } else {
+    ledcWrite(0, 0);
+    ledcWrite(1, 0);
+  }
+}
+
+void applySpeedRamp() {
+  if (commandSpeed < targetSpeed) {
+    commandSpeed = min(commandSpeed + SPEED_RAMP_STEP, targetSpeed);
+  } else if (commandSpeed > targetSpeed) {
+    commandSpeed = max(commandSpeed - SPEED_RAMP_STEP, targetSpeed);
+  }
+  setMotorSpeed(commandSpeed);
+}
+
+void safeStop() {
+  targetSpeed        = 0;
+  commandSpeed       = 0;
+  setMotorSpeed(0);
+  targetSteering     = SERVO_CENTER;
+  setSteering(SERVO_CENTER);
+  lastCameraError    = 0;
+  integralError      = 0;
+  newCameraData      = false;
+  cameraObjectType   = 0;
+  closeWallCount     = 0;
+  directionConfirmed = false;
+  lastObjectType     = 0;
+  currentState       = STATE_SAFE_STOP;
+}
+
+// ==============================
+// E-STOP
+// ==============================
+void checkEStop() {
+  static unsigned long estopTriggerTime = 0;
+  static bool          estopArmed       = false;
+
+  bool pinLow = (digitalRead(ESTOP_PIN) == LOW);
+
+  if (pinLow && !estopArmed) {
+    estopArmed       = true;
+    estopTriggerTime = millis();
+    return;
+  }
+
+  if (estopArmed && !pinLow) {
+    estopArmed = false;
+    if (!estopActive) return;
+  }
+
+  if (estopArmed && (millis() - estopTriggerTime >= ESTOP_DEBOUNCE_MS)) {
+    if (!estopActive) {
+      estopActive = true;
+      safeStop();
+      Serial.println("=== АВАРИЙНАЯ ОСТАНОВКА (E-STOP) ===");
+    }
+  }
+
+  if (estopActive && !pinLow) {
+    estopActive = false;
+    estopArmed  = false;
+    currentState   = STATE_TRACKING;  // CRITICAL FIX: reset state to allow resume
+    lastIMUTime    = millis();
+    lastCameraTime = millis();
+    lastYaw        = yawAngle;
+    targetHeading  = yawAngle;
+    Serial.println("=== ПРОДОЛЖЕНИЕ ГОНКИ ===");
+  }
+
+  if (estopActive) safeStop();
+}
+
+// ==============================
+// ФИНИШ
+// ==============================
+void finishRace() {
+  safeStop();
+  raceFinished = true;
+  currentState = STATE_FINISH;
+  Serial.println("╔══════════════════════════╗");
+  Serial.println("║   ФИНИШ! 3 КРУГА!        ║");
+  Serial.println("╚══════════════════════════╝");
+}
+
+void handleFinishState() {
+  static unsigned long lastBlink = 0;
+  if (millis() - lastBlink > FINISH_BLINK_MS) {
+    lastBlink = millis();
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+  }
+  checkEStop();
+}
+
+// ==============================
+// IMU
+// ==============================
+void calibrateGyro() {
+  Serial.println("Калибровка гироскопа (3 сек)...");
+  Serial.println("Не двигай робота!");
+  float sum = 0;
+  for (int i = 0; i < GYRO_CALIB_SAMPLES; i++) {
+    tcaSelect(TCA_CH_IMU);
+    sensors_event_t accel, gyro, mag, temp;
+    icm.getEvent(&accel, &gyro, &temp, &mag);
+    tcaDisable();
+    sum += gyro.gyro.z;
+    delay(10);
+  }
+  gyroZbias = sum / GYRO_CALIB_SAMPLES;
+  Serial.print("Bias: "); Serial.println(gyroZbias, 6);
+  Serial.println("Калибровка завершена!");
+}
+
+void updateYaw() {
+  unsigned long now = millis();
+  if (lastIMUTime == 0) { lastIMUTime = now; return; }
+
+  float dt = (now - lastIMUTime) / 1000.0f;
+  lastIMUTime = now;
+  if (dt <= 0.0f) return;
+  if (dt > MAX_IMU_DT_SEC) dt = MAX_IMU_DT_SEC;
+
+  tcaSelect(TCA_CH_IMU);
+  sensors_event_t accel, gyro, mag, temp;
+  bool ok = icm.getEvent(&accel, &gyro, &temp, &mag);
+  tcaDisable();
+  if (!ok) return;
+
+  float correctedZ = gyro.gyro.z - gyroZbias;
+  if (fabsf(correctedZ) < 0.01f) correctedZ = 0.0f;
+
+  yawAngle += correctedZ * dt * (180.0f / PI);
+  while (yawAngle >  180) yawAngle -= 360;
+  while (yawAngle < -180) yawAngle += 360;
+
+  // Простая коррекция магнитометром (при необходимости откалибровать magBias)
+  float magX = mag.magnetic.x - magBiasX;
+  float magY = mag.magnetic.y - magBiasY;
+  float magHeading = atan2f(magY, magX) * (180.0f / PI);
+  float magError = magHeading - yawAngle;
+  while (magError >  180) magError -= 360;
+  while (magError < -180) magError += 360;
+  yawAngle += 0.02f * magError;
+  while (yawAngle >  180) yawAngle -= 360;
+  while (yawAngle < -180) yawAngle += 360;
+}
+
+void checkLapCount() {
+  float deltaYaw = yawAngle - lastYaw;
+  while (deltaYaw >  180) deltaYaw -= 360;
+  while (deltaYaw < -180) deltaYaw += 360;
+
+  totalRotation += deltaYaw;
+  lastYaw = yawAngle;
+
+  if (fabsf(totalRotation) >= LAP_DEGREES) {
+    lapCount++;
+    if (totalRotation > 0) totalRotation -= LAP_DEGREES;
+    else                   totalRotation += LAP_DEGREES;
+    Serial.print("=== КРУГ "); Serial.print(lapCount);
+    Serial.print(" ИЗ ");      Serial.print(TARGET_LAPS);
+    Serial.println(" ===");
+    
+    // Включаем алгоритм точной парковки (одометрия стартовой зоны)
+    if (lapCount >= TARGET_LAPS) {
+      odometryStartLaps = totalDistLeft;  // Захватываем значение отсчета, как пройдем линию
+      Serial.println(">>> АКТИВИРОВАН ОДОМЕТР ФИНИШНОЙ ЗОНЫ! Паркуемся... <<<");
+    }
+  }
+
+  // Если проехали нужное кол-во кругов, докатываемся N сантиметров (например, 70-80 см по тикам) внутри стартовой зоны
+  if (lapCount >= TARGET_LAPS) {
+      long distSinceLine = abs(totalDistLeft - odometryStartLaps);
+      if (distSinceLine > (FINISH_ZONE_CM * 40)) { // ~40 тиков энкодера на 1 см дистанции (подберите коэффициент!)
+          finishRace();
+      } else {
+          // Плавное торможение перед финишем
+          targetSpeed = MOTOR_TURN_SLOW; 
+          commandSpeed = min(commandSpeed, MOTOR_TURN_SLOW);
+      }
+  }
+}
+
+// ==============================
+// ОДОМЕТРИЯ
+// ==============================
+int readEncoder(uint8_t tcaChannel) {
+  if (!tcaSelect(tcaChannel)) return -1;
+  Wire.beginTransmission(AS5600_ADDRESS);
+  Wire.write(0x0E);
+  if (Wire.endTransmission(false) != 0) {
+    tcaDisable();
+    return -1;
+  }
+  uint8_t got = Wire.requestFrom((uint8_t)AS5600_ADDRESS, (uint8_t)2);
+  if (got >= 2 && Wire.available() >= 2) {
+    int high = Wire.read();
+    int low  = Wire.read();
+    tcaDisable();
+    return ((high & 0x0F) << 8) | low;
+  }
+  tcaDisable();
+  return -1;
+}
+
+void updateOdometry() {
+  if (encLeft < 0 || encRight < 0) {
+    encErrorCount++;
+    if (encErrorCount == 10) {
+      Serial.println("ALARM: ПОТЕРЯ ЭНКОДЕРОВ!");
+      encLeftPrev  = (encLeft  < 0) ? 0 : encLeft;
+      encRightPrev = (encRight < 0) ? 0 : encRight;
+    }
+    if (encErrorCount >= ENCODER_FAIL_STOP) {
+      encoderFaultActive = true;
+      Serial.println("CRITICAL: ЭНКОДЕРЫ OFFLINE — SAFE STOP");
+      safeStop();
+    }
+    return;
+  }
+
+  if (encoderFaultActive) {
+    encoderFaultActive = false;
+    Serial.println("INFO: ЭНКОДЕРЫ ВОССТАНОВЛЕНЫ, движение разрешено");
+  }
+
+  if (encErrorCount >= 10) {
+    Serial.println("ЭНКОДЕРЫ ВОССТАНОВЛЕНЫ!");
+    encLeftPrev  = encLeft;
+    encRightPrev = encRight;
+  }
+  encErrorCount = 0;
+
+  int deltaLeft = encLeft - encLeftPrev;
+  if (deltaLeft >  2048) deltaLeft -= 4096;
+  if (deltaLeft < -2048) deltaLeft += 4096;
+
+  int deltaRight = encRight - encRightPrev;
+  if (deltaRight >  2048) deltaRight -= 4096;
+  if (deltaRight < -2048) deltaRight += 4096;
+
+  totalDistLeft  += deltaLeft;
+  totalDistRight += deltaRight;
+
+  encLeftPrev  = encLeft;
+  encRightPrev = encRight;
+}
+
+// ==============================
+// КАМЕРА (3 поля: errorX,distance,objectType)
+// ==============================
+void readCameraData() {
+  newCameraData = false;
+
+  while (Serial2.available()) {
+    char c = (char)Serial2.read();
+
+    if (c == '\r') continue;
+
+    if (c == '\n') {
+      uartBuf[uartBufPos] = '\0';
+      uartBufPos = 0;
+      if (strlen(uartBuf) == 0) continue;
+
+      char *comma1 = strchr(uartBuf, ',');
+      if (!comma1) continue;
+      *comma1 = '\0';
+      char *comma2 = strchr(comma1 + 1, ',');
+      if (!comma2) continue;
+      *comma2 = '\0';
+
+      int parsedErrorX     = atoi(uartBuf);
+      int parsedDistance   = atoi(comma1 + 1);
+      int parsedObjectType = atoi(comma2 + 1);
+
+      if (parsedErrorX >= -160 && parsedErrorX <= 160 &&
+          parsedDistance >= 0 && parsedDistance <= 10000) {
+        cameraErrorX     = parsedErrorX;
+        cameraDistance   = parsedDistance;
+        cameraObjectType = parsedObjectType;
+        lastCameraTime   = millis();
+        cameraOnline     = true;
+        newCameraData    = true;
+        lastKnownDistance = cameraDistance;
+      }
+
+    } else {
+      if (uartBufPos < UART_BUF_SIZE - 1) {
+        uartBuf[uartBufPos++] = c;
+      } else {
+        uartBufPos = 0;
+      }
+    }
+  }
+
+  if (millis() - lastCameraTime > CAMERA_TIMEOUT) {
+    if (cameraOnline) Serial.println("WARN: Камера потеряна! Переход на курс по гироскопу.");
+    cameraOnline     = false;
+    cameraObjectType = 0;
+  }
+}
+
+// ==============================
+// УПРАВЛЕНИЕ
+// ==============================
+void enterBlindTurn(int direction) {
+  currentState      = STATE_BLIND_TURN;
+  turnStartYaw      = yawAngle;
+  turnDirection     = direction;
+  turnStartTime     = millis();
+  turnStartDistLeft  = totalDistLeft;
+  turnStartDistRight = totalDistRight;
+  integralError      = 0;
+  closeWallCount     = 0;
+  Serial.print(">>> СТАРТ СЛЕПОГО ПОВОРОТА | В сторону: ");
+  Serial.println(turnDirection == 1 ? "ПРАВО" : "ЛЕВО");
+}
+
+bool updateBlindTurn() {
+  if (millis() - turnStartTime > BLIND_TURN_TIMEOUT) {
+    currentState    = STATE_TRACKING;
+    targetHeading   = yawAngle;
+    closeWallCount  = 0;
+    lastCameraError = 0;
+    Serial.println(">>> ТАЙМАУТ ПОВОРОТА (АВАРИЙНЫЙ ВЫХОД) <<<");
+    return true;
+  }
+
+  targetSteering = (turnDirection == 1) ? SERVO_MAX_RIGHT : SERVO_MAX_LEFT;
+  targetSpeed    = MOTOR_TURN_SLOW;
+
+  float turnedAngle = yawAngle - turnStartYaw;
+  while (turnedAngle >  180) turnedAngle -= 360;
+  while (turnedAngle < -180) turnedAngle += 360;
+
+  long distTraveled = ((totalDistLeft - turnStartDistLeft) + (totalDistRight - turnStartDistRight)) / 2;
+
+  if (fabsf(turnedAngle) >= BLIND_TURN_ANGLE || labs(distTraveled) > ENCODER_TURN_TICKS) {
+    currentState    = STATE_TRACKING;
+    targetHeading   = yawAngle;
+    closeWallCount  = 0;
+    lastCameraError = 0;
+    Serial.println(">>> КОНЕЦ СЛЕПОГО ПОВОРОТА <<<");
+    return true;
+  }
+  return false;
+}
+
+void updateControl() {
+  if (raceFinished) return;
+  if (encoderFaultActive) { safeStop(); return; }
+
+  // SAFE_STOP state keeps holding until cleared
+  if (currentState == STATE_SAFE_STOP) {
+    targetSpeed   = 0;
+    targetSteering= SERVO_CENTER;
+    return;
+  }
+
+  // BLIND_TURN state
+  if (currentState == STATE_BLIND_TURN) {
+    updateBlindTurn();
+    return;
+  }
+
+  // TRACKING with camera offline -> курс по гироскопу
+  if (!cameraOnline) {
+    float headingError = targetHeading - yawAngle;
+    while (headingError >  180) headingError -= 360;
+    while (headingError < -180) headingError += 360;
+    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * headingError), SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+    targetSpeed    = (lastKnownDistance < 80) ? MOTOR_TURN_SLOW : MOTOR_TURN_FAST;
+    return;
+  }
+
+  // TRACKING with camera online
+  if (cameraObjectType == 1) { globalTrackDirection =  1; directionConfirmed = true; }
+  if (cameraObjectType == 2) { globalTrackDirection = -1; directionConfirmed = true; }
+
+  if (cameraDistance > 0 && cameraDistance < 35 && directionConfirmed) closeWallCount++; else closeWallCount = 0;
+
+  if (closeWallCount >= 3) {
+    enterBlindTurn(globalTrackDirection);
+    return;
+  }
+
+  // Обнуляем динамическое смещение для Open Challenge
+  dynamicErrorOffset = 0;
+
+  // Динамическое смещение для ОБЪЕЗДА ПРЕПЯТСТВИЙ (Obstacle Challenge)
+  // Объезжаем только если мод активен и мы видим цилиндр
+  if (isObstacleMode && (cameraObjectType == 3 || cameraObjectType == 4)) {
+    if (cameraDistance > 0 && cameraDistance < 60) {
+      if (cameraObjectType == 3) {
+        // Красный цилиндр (Red) -> смещение -35 (ехать левее объекта, оставляя его справа)
+        dynamicErrorOffset = -35; 
+      } else if (cameraObjectType == 4) {
+        // Зелёный цилиндр (Green) -> смещение +35 (ехать правее объекта, оставляя его слева)
+        dynamicErrorOffset = 35;
+      }
+    }
+  }
+
+  // PID по камере / объекту
+  if (cameraObjectType != 0) {
+    if (newCameraData) {
+      int avoidError = cameraErrorX;
+      
+      // Игнорируем хардкорные смещения, оставляем только плавное:
+      avoidError += dynamicErrorOffset;
+
+      if (cameraObjectType != lastObjectType) {
+        integralError   = 0;
+        lastCameraError = avoidError;
+      }
+      lastObjectType = cameraObjectType;
+
+      int errorDerivative = avoidError - lastCameraError;
+      integralError += avoidError;
+      integralError = constrain(integralError, -500, 500); // Урезаем windup до 500 для безопасности
+      lastCameraError = avoidError;
+
+      int steeringCorrection = (int)(PID_KP * avoidError + PID_KI * integralError + PID_KD * errorDerivative);
+      targetSteering = constrain(SERVO_CENTER + steeringCorrection, SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+    }
+    targetHeading = yawAngle;
+
+  } else {
+    float headingError = targetHeading - yawAngle;
+    while (headingError >  180) headingError -= 360;
+    while (headingError < -180) headingError += 360;
+    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * headingError), SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+  }
+
+  // Динамическая скорость
+  int turnAmount = abs(targetSteering - SERVO_CENTER);
+  if      (turnAmount > 30) targetSpeed = MOTOR_TURN_SLOW;
+  else if (turnAmount > 15) targetSpeed = MOTOR_TURN_FAST;
+  else                      targetSpeed = MOTOR_MAX_SPEED;
+
+  if (cameraDistance > 0 && cameraDistance < 100) {
+    int rampSpeed = map(cameraDistance, 35, 100, MOTOR_TURN_SLOW, MOTOR_MAX_SPEED);
+    rampSpeed = constrain(rampSpeed, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
+    targetSpeed = min(targetSpeed, rampSpeed);
+  }
+}
+
+// ==============================
+// LIVE TUNING
+// ==============================
+void checkSerialCommands() {
+  static char    cmdBuf[16];
+  static uint8_t cmdPos = 0;
+
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      cmdBuf[cmdPos] = '\0';
+      if (cmdPos > 1) {
+        char  type = cmdBuf[0];
+        float val  = atof(&cmdBuf[1]);
+        if (type == 'P' || type == 'p') { PID_KP = val; Serial.print("Kp = "); Serial.println(PID_KP); }
+        if (type == 'D' || type == 'd') { PID_KD = val; Serial.print("Kd = "); Serial.println(PID_KD); }
+        if (type == 'I' || type == 'i') { PID_KI = val; Serial.print("Ki = "); Serial.println(PID_KI); integralError = 0; }
+      }
+      cmdPos = 0;
+    } else if (cmdPos < 15) {
+      cmdBuf[cmdPos++] = c;
+    }
+  }
+}
+
+// ==============================
+// SETUP
+// ==============================
+void setup() {
+  Serial.begin(115200);
+  Serial.setTimeout(10);
+  delay(500);
+
+  Serial.println("=== WRO V8.7 RACE DAY PRO (Obstacle/Open) ===");
+
+  pinMode(ESTOP_PIN, INPUT_PULLUP);
+  pinMode(MODE_SWITCH_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
+
+  isObstacleMode = (digitalRead(MODE_SWITCH_PIN) == LOW);
+  Serial.print("РЕЖИМ ГОНКИ: "); 
+  Serial.println(isObstacleMode ? "OBSTACLE CHALLENGE (ПРЕПЯТСТВИЯ)" : "OPEN CHALLENGE (СКОРОСТЬ)");
+
+  Serial2.begin(115200, SERIAL_8N1, UART_RX, UART_TX);
+  Serial2.setTimeout(10);
+
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000);
+  Wire.setWireTimeout(3000, true); // I2C Hardware Timeout 3мс с автоматическим сбросом шины
+
+  steeringServo.attach(SERVO_PIN, 500, 2500);
+  setSteering(SERVO_CENTER);
+
+  pinMode(MOTOR_R_EN, OUTPUT);
+  pinMode(MOTOR_L_EN, OUTPUT);
+  digitalWrite(MOTOR_R_EN, HIGH);
+  digitalWrite(MOTOR_L_EN, HIGH);
+  ledcSetup(0, 20000, 8); ledcAttachPin(MOTOR_R_PWM, 0);
+  ledcSetup(1, 20000, 8); ledcAttachPin(MOTOR_L_PWM, 1);
+  setMotorSpeed(0);
+
+  if (!tcaSelect(TCA_CH_IMU) || !icm.begin_I2C()) {
+    Serial.println("ICM-20948 ОШИБКА!");
+    while (true);
+  }
+  tcaDisable();
+
+  calibrateGyro();
+
+  lastIMUTime    = millis();
+  lastCameraTime = millis();
+  targetHeading  = yawAngle;
+
+  currentState = STATE_INIT;
+  Serial.println("=== СИСТЕМА ГОТОВА ===");
+}
+
+// ==============================
+// LOOP
+// ==============================
+void loop() {
+  checkSerialCommands();
+
+  if (raceFinished) { handleFinishState(); return; }
+
+  static unsigned long lastLoopTime = 0;
+  unsigned long now = millis();
+  if (now - lastLoopTime < LOOP_INTERVAL) return;
+  lastLoopTime = now;
+
+  checkEStop();
+  if (estopActive) { currentState = STATE_SAFE_STOP; safeStop(); return; }
+
+  readCameraData();
+  updateYaw();
+  checkLapCount();
+
+  encLeft  = readEncoder(TCA_CH_ENC_LEFT);
+  encRight = readEncoder(TCA_CH_ENC_RIGHT);
+  updateOdometry();
+  if (encoderFaultActive) { currentState = STATE_SAFE_STOP; return; }
+
+  if (currentState == STATE_INIT) {
+    currentState = STATE_TRACKING; // после инициализации переходим в трекинг
+  }
+
+  updateControl();
+  setSteering(targetSteering);
+  applySpeedRamp();
+
+  static unsigned long lastPrintTime = 0;
+  if (millis() - lastPrintTime >= PRINT_INTERVAL) {
+    lastPrintTime = millis();
+    Serial.print("Yaw: ");    Serial.print(yawAngle, 1);
+    Serial.print(" | Lap: "); Serial.print(lapCount);
+    Serial.print(" | Dist: "); Serial.print(cameraDistance);
+    Serial.print(" | State: ");
+    if (currentState == STATE_INIT) Serial.print("INIT");
+    else if (currentState == STATE_TRACKING) Serial.print("TRACK");
+    else if (currentState == STATE_BLIND_TURN) Serial.print("BLIND");
+    else if (currentState == STATE_SAFE_STOP) Serial.print("SAFE");
+    else if (currentState == STATE_FINISH) Serial.print("FINISH");
+    else Serial.print("?");
+    Serial.print(" | DirConfirmed: "); Serial.println(directionConfirmed ? "YES" : "NO");
+  }
+}
+
+
+===== FILE: README.md =====
+# WRO Project Pack
+
+This folder contains firmware, diagnostics, and operation documents for the WRO robot.
+
+## Core firmware
+- eps323.cpp — Main robot firmware
+- scanerI2C.cpp — I2C/TCA diagnostics scanner
+- WRO_Config_Template.h — Tunable parameters template
+
+## Operation docs
+- WRO_Robot_Master_Checklist_2026-03-27.md
+- WRO_Quick_Race_Checklist.md
+- WRO_Wiring_Map.md
+- WRO_OpenMV_UART_Protocol.md
+
+## Logs and templates
+- WRO_Test_Log.csv
+- WRO_PID_Tuning_Log.csv
+- WRO_Preflight_Log.md
+- WRO_Release_Notes_Template.md
+
+## Recommended workflow
+1. Run scanner and verify channel map.
+2. Upload main firmware.
+3. Validate E-Stop and camera timeout behavior.
+4. Run short track tests and record in logs.
+5. Tune Kp/Kd with controlled runs.
+
+
+===== FILE: scanerI2C.cpp =====
+/*
+ * WRO Future Engineers - Умный сканер I2C
+ * Версия: Финальная
+ * Железо: ESP32 DevKit, TCA9548A, AS5600 (x2), ICM-20948
+ */
+
+#include <Wire.h>
+
+// ==============================
+// ПИНЫ И АДРЕСА
+// ==============================
+#define I2C_SDA      21
+#define I2C_SCL      22
+#define TCA_ADDRESS  0x70
+
+// ==============================
+// ОЖИДАЕМАЯ КАРТА КАНАЛОВ
+// ==============================
+// Канал 0 -> ICM-20948 (0x69)
+// Канал 1 -> AS5600 левый (0x36)
+// Канал 2 -> AS5600 правый (0x36)
+// Канал 3 -> VL53L1X левый (0x29)
+// Канал 4 -> VL53L1X правый (0x29)
+// Каналы 5-7 -> пусто
+
+// ==============================
+// ЦЕЛЕВЫЕ АДРЕСА (Targeted Scan)
+// ==============================
+const uint8_t targetAddresses[] = {0x36, 0x68, 0x69, 0x28, 0x29};
+const int     numTargets = sizeof(targetAddresses) / sizeof(targetAddresses[0]);
+
+const int16_t expectedAddressByChannel[8] = {
+  0x69,  // CH0: ICM-20948
+  0x36,  // CH1: AS5600 left
+  0x36,  // CH2: AS5600 right
+  0x29,  // CH3: VL53L1X left
+  0x29,  // CH4: VL53L1X right
+  -1, -1, -1
+};
+
+// ==============================
+// МУЛЬТИПЛЕКСОР
+// ==============================
+bool tcaSelect(uint8_t channel) {
+  if (channel > 7) return false;
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(1 << channel);
+  return (Wire.endTransmission() == 0);
+}
+
+bool tcaDisable() {
+  Wire.beginTransmission(TCA_ADDRESS);
+  Wire.write(0);
+  return (Wire.endTransmission() == 0);
+}
+
+// ==============================
+// ОПРЕДЕЛЕНИЕ ДАТЧИКА ПО АДРЕСУ
+// ==============================
+String getSensorName(uint8_t address) {
+  switch (address) {
+    case 0x36: return "AS5600 (энкодер)";
+    case 0x68: return "ICM-20948 (IMU, AD0=GND)";
+    case 0x69: return "ICM-20948 (IMU, AD0=VCC)";
+    case 0x28: return "BNO085 (SA0=GND)";
+    case 0x29: return "BNO085 (SA0=VCC)";
+    default:   return "неизвестный";
+  }
+}
+
+// ==============================
+// ПРОВЕРКА ОДНОГО АДРЕСА
+// ==============================
+bool checkAddress(uint8_t address, uint8_t retries = 2) {
+  for (uint8_t i = 0; i < retries; i++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) return true;
+    delay(1);
+  }
+  return false;
+}
+
+// ==============================
+// ИТОГОВЫЙ ОТЧЁТ
+// ==============================
+void printExpectedMap() {
+  Serial.println("\n--- Ожидаемая карта каналов ---");
+  Serial.println("  Канал 0 -> ICM-20948  адрес 0x69");
+  Serial.println("  Канал 1 -> AS5600     адрес 0x36 (левый)");
+  Serial.println("  Канал 2 -> AS5600     адрес 0x36 (правый)");
+  Serial.println("  Каналы 3-7 -> пусто");
+  Serial.println("--------------------------------");
+}
+
+// ==============================
+// SETUP
+// ==============================
+void setup() {
+  Serial.begin(115200);
+
+  // Защита от зависания без ноутбука
+  unsigned long t = millis();
+  while (!Serial && millis() - t < 3000);
+
+  delay(500);
+  Serial.println("\n╔═══════════════════════════════╗");
+  Serial.println("║   Умный сканер I2C WRO v2.0   ║");
+  Serial.println("╚═══════════════════════════════╝");
+
+  // I2C на боевой частоте
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000);
+  Serial.println("Шина I2C запущена (400 кГц).");
+
+  // Печатаем ожидаемую карту
+  printExpectedMap();
+}
+
+// ==============================
+// LOOP
+// ==============================
+void loop() {
+  Serial.println("\n=== Начало сканирования ===");
+
+  // --------------------------------------------------
+  // ШАГ 1: Проверка мультиплексора TCA9548A
+  // --------------------------------------------------
+  Serial.print("Проверка TCA9548A (0x70)... ");
+  if (!checkAddress(TCA_ADDRESS)) {
+    Serial.println("НЕ НАЙДЕН!");
+    Serial.println("Проверь подключение:");
+    Serial.println("  VCC  -> 3.3V");
+    Serial.println("  GND  -> GND");
+    Serial.println("  SDA  -> GPIO 21");
+    Serial.println("  SCL  -> GPIO 22");
+    Serial.println("  A0/A1/A2 -> GND (адрес 0x70)");
+    delay(3000);
+    return;
+  }
+  Serial.println("OK");
+
+  // --------------------------------------------------
+  // ШАГ 2: Сканирование каналов
+  // --------------------------------------------------
+  int totalFound  = 0;
+  int totalErrors = 0;
+
+  for (uint8_t channel = 0; channel < 8; channel++) {
+    if (!tcaSelect(channel)) {
+      Serial.print("Канал [");
+      Serial.print(channel);
+      Serial.println("]: ОШИБКА TCA (нет ACK)");
+      totalErrors++;
+      continue;
+    }
+    delay(2); // Пауза для физического открытия ключей
+
+    Serial.print("Канал [");
+    Serial.print(channel);
+    Serial.print("]: ");
+
+    int devicesFound = 0;
+    bool expectedFound = false;
+    int16_t expectedAddress = expectedAddressByChannel[channel];
+
+    for (int i = 0; i < numTargets; i++) {
+      uint8_t address = targetAddresses[i];
+
+      if (checkAddress(address)) {
+        Serial.print("0x");
+        if (address < 16) Serial.print("0");
+        Serial.print(address, HEX);
+        Serial.print(" ");
+        Serial.print(getSensorName(address));
+        if (expectedAddress >= 0 && address == expectedAddress) {
+          expectedFound = true;
+        }
+        if (expectedAddress < 0) {
+          Serial.print(" [НЕОЖИДАННО НА ПУСТОМ КАНАЛЕ]");
+          totalErrors++;
+        }
+        Serial.print("  ");
+        devicesFound++;
+        totalFound++;
+      }
+    }
+
+    if (devicesFound == 0) {
+      Serial.print("пусто");
+
+      if (expectedAddress >= 0) {
+        Serial.print("  <- ВНИМАНИЕ: ожидался адрес 0x");
+        if (expectedAddress < 16) Serial.print("0");
+        Serial.print((uint8_t)expectedAddress, HEX);
+        Serial.print(" (");
+        Serial.print(getSensorName((uint8_t)expectedAddress));
+        Serial.print(")!");
+        totalErrors++;
+      }
+    } else if (expectedAddress >= 0 && !expectedFound) {
+      Serial.print(" <- ВНИМАНИЕ: найдено устройство, но не ожидаемый адрес 0x");
+      if (expectedAddress < 16) Serial.print("0");
+      Serial.print((uint8_t)expectedAddress, HEX);
+      totalErrors++;
+    }
+
+    Serial.println();
+  }
+
+  // Безопасное закрытие всех каналов
+  if (!tcaDisable()) {
+    Serial.println("WARN: Не удалось закрыть каналы TCA9548A");
+    totalErrors++;
+  }
+
+  // --------------------------------------------------
+  // ШАГ 3: Итоговый отчёт
+  // --------------------------------------------------
+  Serial.println("\n--- Итог сканирования ---");
+  Serial.print("Найдено датчиков: ");
+  Serial.println(totalFound);
+  Serial.print("Проблем: ");
+  Serial.println(totalErrors);
+
+  if (totalErrors == 0 && totalFound >= 3) {
+    Serial.println("СТАТУС: ВСЕ ДАТЧИКИ В НОРМЕ — можно заливать основной код!");
+  } else if (totalErrors > 0) {
+    Serial.println("СТАТУС: ЕСТЬ ПРОБЛЕМЫ — проверь подключение датчиков.");
+  } else {
+    Serial.println("СТАТУС: Датчиков меньше ожидаемого — проверь каналы 0,1,2.");
+  }
+
+  Serial.println("=== Следующее сканирование через 5 сек ===");
+  delay(5000);
+}
+
+===== FILE: WRO_Config_Template.h =====
+#pragma once
+
+// ===== Robot Configuration Template =====
+// Copy values into your main firmware after validation.
+
+// Servo
+#define CFG_SERVO_CENTER      90
+#define CFG_SERVO_MAX_RIGHT  135
+#define CFG_SERVO_MAX_LEFT    45
+
+// Motor limits
+#define CFG_MOTOR_MAX_SPEED  150
+#define CFG_MOTOR_TURN_FAST  120
+#define CFG_MOTOR_TURN_SLOW   80
+#define CFG_MOTOR_MIN_SPEED   35
+
+// Control gains
+#define CFG_PID_KP          0.50f
+#define CFG_PID_KI          0.001f
+#define CFG_PID_KD          0.10f
+#define CFG_GYRO_KP         1.20f
+
+// Timeouts and loop
+#define CFG_CAMERA_TIMEOUT_MS  500
+#define CFG_LOOP_INTERVAL_MS    10
+
+// Blind turn / odometry
+#define CFG_ENCODER_TURN_TICKS 3000
+
+// Magnetometer bias (calibrate per robot)
+#define CFG_MAG_BIAS_X       0.0f
+#define CFG_MAG_BIAS_Y       0.0f
+
+// Race
+#define CFG_TARGET_LAPS          3
+#define CFG_LAP_DEGREES      360.0f
+
+// Safety
+#define CFG_ESTOP_DEBOUNCE_MS    20
+#define CFG_FINISH_BLINK_MS     500
+
+
+===== FILE: WRO_Maintenance_Log.csv =====
+date,component,issue_found,action_taken,replaced_part,next_check_date,technician,notes
+
+
+===== FILE: WRO_OpenMV_UART_Protocol.md =====
+# OpenMV UART Protocol for ESP32
+
+## Frame Format (3 fields)
+Single line, ASCII:
+errorX,distance,objectType\n
+Example:
+-12,145,1
+
+## Field Ranges (expected by firmware)
+- errorX: -160 .. 160
+- distance: 0 .. 10000
+- objectType:
+	- 0: нет объекта / фон
+	- 1: оранжевая линия (курс +)
+	- 2: синяя линия (курс -)
+	- 3: красный столбик (объезд вправо)
+	- 4: зелёный столбик (объезд влево)
+
+## Requirements
+- Baud: 115200
+- 8N1
+- End each frame with \n (\r optional before \n)
+- Exactly two commas per frame
+- Avoid empty frames
+
+## Validation Rules in ESP32
+- Frame must contain exactly two commas
+- All three parts must be non-empty
+- Values must pass range limits above
+- On timeout, camera marked offline and safeStop triggered
+
+
+===== FILE: WRO_PID_Tuning_Log.csv =====
+date,firmware,Kp,Kd,turn_speed_fast,turn_speed_slow,max_speed,avg_lap_time_sec,oscillation_level(0-5),overshoot_level(0-5),notes
+
+
+===== FILE: WRO_Preflight_Log.md =====
+# WRO Preflight Log
+
+## Session
+- Date:
+- Location:
+- Firmware:
+- Operator:
+
+## Hardware Check
+- [ ] Battery voltage in range
+- [ ] Connectors tight
+- [ ] No wire damage
+- [ ] Wheels/steering free movement
+
+## Scanner Check (scanerI2C.cpp)
+- [ ] TCA9548A at 0x70
+- [ ] CH0 IMU present
+- [ ] CH1 AS5600 left present
+- [ ] CH2 AS5600 right present
+- [ ] CH3-CH7 empty / expected
+
+## Safety Check
+- [ ] E-Stop press = immediate stop
+- [ ] E-Stop release = controlled resume
+- [ ] Camera timeout = safe stop
+
+## Final Decision
+- [ ] READY FOR TRACK
+- [ ] NEED FIXES BEFORE RUN
+
+Notes:
+
+
+
+===== FILE: WRO_Quick_Race_Checklist.md =====
+# WRO Quick Race Checklist
+
+## 1) Before Power ON
+- Battery charged and voltage checked
+- Wheels free, no mechanical jam
+- E-Stop button physically works
+- Connectors fixed, no loose wire
+
+## 2) Power ON
+- ESP32 boots without errors
+- Steering centers correctly
+- Motor remains stopped at startup
+- Status LED behavior normal
+
+## 3) Sensor Check
+- Run scanerI2C.cpp
+- CH0 IMU found
+- CH1 AS5600 left found
+- CH2 AS5600 right found
+- No unexpected devices on empty channels
+
+## 4) Safety Check
+- Press E-Stop: motor=0, steering center
+- Release E-Stop: system resumes correctly
+- Camera disconnect test triggers safe stop
+
+## 5) Track Start
+- Correct profile/Kp/Kd loaded
+- First run at reduced speed
+- Observe 1 full lap before race pace
+
+## 6) Final Go/No-Go
+- No critical warnings in serial
+- Stable steering and lap counting
+- Team sign-off complete
+
+Sign: ____________________  Time: ____________________
+
+
+===== FILE: WRO_Release_Notes_Template.md =====
+# WRO Firmware Release Notes
+
+## Release
+- Version:
+- Date:
+- Author:
+
+## Summary
+Short description of what changed.
+
+## Changes
+- [ ] Safety
+- [ ] Control
+- [ ] Sensors
+- [ ] Diagnostics
+- [ ] Performance
+
+Detailed list:
+- 
+- 
+- 
+
+## Test Evidence
+- Scanner test result:
+- E-Stop test result:
+- Track test result:
+- Known limitations:
+
+## Rollback Plan
+- Previous stable version:
+- Steps to rollback:
+
+## Approval
+- Software lead:
+- Hardware lead:
+- Safety lead:
+
+
+===== FILE: WRO_Risk_Register.md =====
+# WRO Risk Register
+
+| ID | Risk | Impact | Likelihood | Detection | Mitigation | Owner |
+|----|------|--------|------------|-----------|------------|-------|
+| R1 | Camera frame loss | High | Medium | UART timeout warnings | Cable fixation, protocol validation, safe stop | Vision |
+| R2 | I2C noise / dropout | High | Medium | Scanner mismatch, encoder alarms | Short I2C wires, solid GND, retries | Electronics |
+| R3 | E-Stop hardware failure | Critical | Low | Preflight E-Stop test fail | Dual checks each run, button replacement policy | Safety |
+| R4 | IMU drift | Medium | Medium | Wrong lap increments | Recalibration, vibration isolation, dt clamp | Controls |
+| R5 | Wheel slip at high speed | High | Medium | Unstable line following | Speed ramping, turn speed limits, tire setup | Mechanics |
+| R6 | Brownout under load | High | Medium | Random resets | Battery health checks, power distribution improvements | Electronics |
+| R7 | Connector loosening | Medium | Medium | Intermittent failures | Strain relief, locking connectors, preflight inspection | Hardware |
+
+## Update rule
+- Review before every competition session.
+- Add new risks discovered in testing.
+- Track mitigation status weekly.
+
+
+===== FILE: WRO_Robot_Master_Checklist_2026-03-27.md =====
+# WRO Future Engineers — Robot Master Checklist
+
+Date: 27 March 2026
+Team: ____________________
+Robot Version: ____________________
+Firmware Version: ____________________
+
+---
+
+## 1) Goal of this file
+Use this checklist before every test and race run to make sure the robot is safe, stable, and ready.
+
+---
+
+## 2) Hardware Required (Minimum)
+
+### Controller and logic
+- ESP32 DevKitC V4
+- TCA9548A I2C multiplexer
+- ICM-20948 IMU
+- AS5600 encoder x2
+- OpenMV H7 Plus camera (or configured equivalent)
+
+### Motion and power
+- BTS7960 motor driver
+- DC drive motor
+- Steering servo JX PDI-6221MG
+- Stable battery for motor + logic power strategy
+- Main power switch
+- Emergency stop button (physical, normally HIGH with pull-up in code)
+
+### Wiring and mechanics
+- Good quality wires + crimped connectors
+- Common GND between ESP32, driver, sensors, camera
+- Mounted sensors with vibration reduction
+- Proper servo horn alignment at center position
+
+---
+
+## 3) Required Wiring Map (must match firmware)
+
+### ESP32 pins
+- I2C SDA: GPIO 21
+- I2C SCL: GPIO 22
+- Servo PWM: GPIO 18
+- BTS7960 R_EN: GPIO 19
+- BTS7960 L_EN: GPIO 23
+- BTS7960 R_PWM: GPIO 5
+- BTS7960 L_PWM: GPIO 14
+- Camera UART RX: GPIO 16
+- Camera UART TX: GPIO 17
+- E-Stop input: GPIO 32
+- Status LED: GPIO 2
+
+### TCA9548A channel mapping
+- Channel 0: ICM-20948 (expected 0x69)
+- Channel 1: AS5600 left (0x36)
+- Channel 2: AS5600 right (0x36)
+- Channel 3-7: empty (unless intentionally used)
+
+### Multiplexer base address
+- TCA9548A: 0x70 (A0/A1/A2 to GND)
+
+---
+
+## 4) Software/Library Requirements
+
+### Arduino IDE / PlatformIO
+- ESP32 board package installed
+- Correct board profile selected
+- Serial monitor at 115200 baud
+
+### Libraries
+- Wire (built-in)
+- ESP32Servo
+- Adafruit ICM20948
+- Adafruit Unified Sensor
+
+### Code files
+- scanerI2C.cpp (diagnostic scanner)
+- eps323.cpp (main race logic)
+
+---
+
+## 5) Safety Requirements (non-negotiable)
+- Emergency stop works instantly in all states
+- On E-Stop: motor speed goes to 0 and steering centers
+- Camera timeout triggers safe stop
+- Persistent encoder failure triggers safe stop
+- Robot starts with motor output = 0
+- Test with wheels lifted before floor tests
+
+---
+
+## 6) Pre-Flight Procedure (every run)
+
+### Step A — Visual and electrical
+- Check all connectors for looseness
+- Check no exposed short points
+- Verify battery voltage in safe range
+- Verify common GND continuity
+
+### Step B — Sensor bus check
+1. Upload and run scanerI2C.cpp
+2. Confirm:
+   - TCA9548A detected at 0x70
+   - CH0 has IMU at expected address
+   - CH1 and CH2 have AS5600
+   - No unexpected devices on empty channels
+3. Fix wiring before continuing if mismatch appears
+
+### Step C — Main firmware check
+1. Upload eps323.cpp
+2. Open serial output
+3. Confirm boot sequence:
+   - IMU init OK
+   - Gyro calibration completes
+   - System ready message appears
+4. Trigger E-Stop physically and verify immediate stop
+
+### Step D — Actuator sanity
+- Steering centered at startup
+- Left/right steering direction correct
+- Motor direction matches intended forward command
+- No motor jitter when target speed is 0
+
+---
+
+## 7) Calibration Requirements
+
+### IMU gyro
+- Keep robot still during calibration
+- Repeat calibration if large yaw drift appears while stationary
+
+### Steering center
+- Mechanical wheels straight at SERVO_CENTER
+- Adjust horn physically first, code trim second
+
+### Camera pipeline
+- Ensure UART message format is exactly: error,distance\n
+- Validate valid ranges in runtime:
+  - errorX: -160 to 160
+  - distance: 0 to 10000
+
+### PID tuning
+- Start with conservative values
+- Tune Kp first, then Kd
+- Use fixed test track and record results
+
+---
+
+## 8) Runtime Health Indicators to Watch
+- Camera timeout warnings
+- Encoder loss alarms
+- Unexpected lap jumps
+- E-Stop release/engage logs
+- Oscillation in steering (too high Kp)
+- Slow correction (too low Kp)
+
+---
+
+## 9) Track Testing Plan (must do in order)
+1. Static test on stand (wheels off ground)
+2. Straight-line short run
+3. Controlled turns at low speed
+4. Full lap at reduced speed
+5. Race speed trials with repeated runs
+6. Stress test with quick re-start and E-Stop events
+
+Record each run:
+- Kp/Kd
+- Battery voltage
+- Floor condition
+- Laps completed
+- Failure mode if any
+
+---
+
+## 10) Common Failure Modes + Quick Fixes
+
+### TCA/IMU not found
+- Recheck channel mapping and address
+- Recheck 3.3V/GND/SDA/SCL
+- Reduce bus noise, shorten I2C wires
+
+### Random camera loss
+- Verify OpenMV UART baud and packet format
+- Check RX/TX crossed correctly
+- Improve cable fixation and grounding
+
+### Encoder dropouts
+- Check AS5600 supply and magnet alignment
+- Check I2C pull-ups and wiring quality
+- Confirm channel selection logic
+
+### Car oscillates strongly
+- Lower Kp
+- Increase damping (Kd) slightly
+- Reduce max speed in sharp turns
+
+### Robot drifts in heading
+- Recalibrate gyro bias
+- Reduce vibration near IMU
+- Validate dt stability and integration behavior
+
+---
+
+## 11) Competition-Day Checklist
+- Spare wires/connectors/sensors ready
+- Backup flashed ESP32 ready
+- Printed wiring map available
+- Final tested firmware version tagged
+- Battery fully charged and verified
+- Tool kit ready (hex keys, screwdrivers, tape, zip ties)
+- Last full pre-flight completed and signed
+
+Sign-off:
+- Hardware lead: ____________________
+- Software lead: ____________________
+- Safety lead: ____________________
+- Time: ____________________
+
+---
+
+## 12) Suggested Next Improvements
+- Add formal finite-state machine: INIT, READY, RUN, SAFE_STOP, FINISH
+- Add acceleration ramp limiter for smoother traction
+- Add telemetry CSV output for data-driven tuning
+- Add watchdog/reset strategy for long runs
+- Add config header with all tunables in one place
+
+
+===== FILE: WRO_Test_Log.csv =====
+date,track,firmware,scanner_ok,imu_ok,encoders_ok,camera_ok,estop_ok,laps_completed,finish_status,max_speed_profile,issues,action_items,operator
+
+
+===== FILE: WRO_Track_Test_Cases.md =====
+# WRO Track Test Cases
+
+## TC-01 Stand Safety Test
+- Goal: verify no unexpected motion at startup
+- Steps: power on with wheels lifted
+- Pass: steering centers, motor output is zero
+
+## TC-02 E-Stop Reaction
+- Goal: immediate stop in motion
+- Steps: command motion, press E-Stop
+- Pass: motor speed zero + steering center instantly
+
+## TC-03 Camera Timeout Stop
+- Goal: fail-safe on vision loss
+- Steps: disconnect camera UART while running
+- Pass: warning in serial and safe stop
+
+## TC-04 Encoder Loss Handling
+- Goal: critical encoder failure lockout
+- Steps: disconnect one encoder and run
+- Pass: encoder alarm then motion blocked until recovery
+
+## TC-05 Lap Counting Stability
+- Goal: verify stable lap increments
+- Steps: run 3 laps with consistent direction
+- Pass: lap count increments correctly, no extra jumps
+
+## TC-06 Recovery Behavior
+- Goal: smooth resume after temporary fault
+- Steps: induce short sensor fault then recover
+- Pass: robot resumes control without unsafe jump
+
+## Record for each test
+- Date/time
+- Firmware version
+- Track condition
+- Battery voltage
+- Result: PASS/FAIL
+- Notes and follow-up action
+
+
+===== FILE: WRO_Wiring_Map.md =====
+# WRO Wiring Map
+
+## ESP32 Pin Mapping
+- GPIO21 -> I2C SDA
+- GPIO22 -> I2C SCL
+- GPIO18 -> Steering Servo PWM
+- GPIO19 -> BTS7960 R_EN
+- GPIO23 -> BTS7960 L_EN
+- GPIO5  -> BTS7960 R_PWM
+- GPIO14 -> BTS7960 L_PWM
+- GPIO16 -> UART RX (to OpenMV TX)
+- GPIO17 -> UART TX (to OpenMV RX)
+- GPIO32 -> E-Stop input (pull-up)
+- GPIO2  -> Status LED
+
+## I2C / TCA9548A
+- TCA address: 0x70
+- CH0 -> ICM-20948 (0x69 expected)
+- CH1 -> AS5600 left (0x36)
+- CH2 -> AS5600 right (0x36)
+- CH3 -> VL53L1X left (0x29)
+- CH4 -> VL53L1X right (0x29)
+- CH5..CH7 -> empty by default
+
+## Power and Ground
+- Common GND across ESP32, BTS7960, sensors, camera
+- Keep logic/signal wiring short and secured
+- Check polarity before every power-up
+
+
+
+
+======================================
+FILE: WRO_Config_Template.h
+======================================
+#pragma once
+
+// ===== Robot Configuration Template =====
+// Copy values into your main firmware after validation.
+
+// Servo
+#define CFG_SERVO_CENTER      90
+#define CFG_SERVO_MAX_RIGHT  135
+#define CFG_SERVO_MAX_LEFT    45
+
+// Motor limits
+#define CFG_MOTOR_MAX_SPEED  150
+#define CFG_MOTOR_TURN_FAST  120
+#define CFG_MOTOR_TURN_SLOW   80
+#define CFG_MOTOR_MIN_SPEED   35
+
+// Control gains
+#define CFG_PID_KP          0.50f
+#define CFG_PID_KI          0.001f
+#define CFG_PID_KD          0.10f
+#define CFG_GYRO_KP         1.20f
+
+// Timeouts and loop
+#define CFG_CAMERA_TIMEOUT_MS  500
+#define CFG_LOOP_INTERVAL_MS    10
+
+// Blind turn / odometry
+#define CFG_ENCODER_TURN_TICKS 3000
+
+// Magnetometer bias (calibrate per robot)
+#define CFG_MAG_BIAS_X       0.0f
+#define CFG_MAG_BIAS_Y       0.0f
+
+// Race
+#define CFG_TARGET_LAPS          3
+#define CFG_LAP_DEGREES      360.0f
+
+// Safety
+#define CFG_ESTOP_DEBOUNCE_MS    20
+#define CFG_FINISH_BLINK_MS     500
+
+
+======================================
+FILE: WRO_Maintenance_Log.csv
+======================================
+date,component,issue_found,action_taken,replaced_part,next_check_date,technician,notes
+
+
+======================================
+FILE: WRO_OpenMV_UART_Protocol.md
+======================================
+# OpenMV UART Protocol for ESP32
+
+## Frame Format (3 fields)
+Single line, ASCII:
+errorX,distance,objectType\n
+Example:
+-12,145,1
+
+## Field Ranges (expected by firmware)
+- errorX: -160 .. 160
+- distance: 0 .. 10000
+- objectType:
+	- 0: нет объекта / фон
+	- 1: оранжевая линия (курс +)
+	- 2: синяя линия (курс -)
+	- 3: красный столбик (объезд вправо)
+	- 4: зелёный столбик (объезд влево)
+
+## Requirements
+- Baud: 115200
+- 8N1
+- End each frame with \n (\r optional before \n)
+- Exactly two commas per frame
+- Avoid empty frames
+
+## Validation Rules in ESP32
+- Frame must contain exactly two commas
+- All three parts must be non-empty
+- Values must pass range limits above
+- On timeout, camera marked offline and safeStop triggered
+
+
+======================================
+FILE: WRO_PID_Tuning_Log.csv
+======================================
+date,firmware,Kp,Kd,turn_speed_fast,turn_speed_slow,max_speed,avg_lap_time_sec,oscillation_level(0-5),overshoot_level(0-5),notes
+
+
+======================================
+FILE: WRO_Preflight_Log.md
+======================================
+# WRO Preflight Log
+
+## Session
+- Date:
+- Location:
+- Firmware:
+- Operator:
+
+## Hardware Check
+- [ ] Battery voltage in range
+- [ ] Connectors tight
+- [ ] No wire damage
+- [ ] Wheels/steering free movement
+
+## Scanner Check (scanerI2C.cpp)
+- [ ] TCA9548A at 0x70
+- [ ] CH0 IMU present
+- [ ] CH1 AS5600 left present
+- [ ] CH2 AS5600 right present
+- [ ] CH3-CH7 empty / expected
+
+## Safety Check
+- [ ] E-Stop press = immediate stop
+- [ ] E-Stop release = controlled resume
+- [ ] Camera timeout = safe stop
+
+## Final Decision
+- [ ] READY FOR TRACK
+- [ ] NEED FIXES BEFORE RUN
+
+Notes:
+
+
+
+======================================
+FILE: WRO_Quick_Race_Checklist.md
+======================================
+# WRO Quick Race Checklist
+
+## 1) Before Power ON
+- Battery charged and voltage checked
+- Wheels free, no mechanical jam
+- E-Stop button physically works
+- Connectors fixed, no loose wire
+
+## 2) Power ON
+- ESP32 boots without errors
+- Steering centers correctly
+- Motor remains stopped at startup
+- Status LED behavior normal
+
+## 3) Sensor Check
+- Run scanerI2C.cpp
+- CH0 IMU found
+- CH1 AS5600 left found
+- CH2 AS5600 right found
+- No unexpected devices on empty channels
+
+## 4) Safety Check
+- Press E-Stop: motor=0, steering center
+- Release E-Stop: system resumes correctly
+- Camera disconnect test triggers safe stop
+
+## 5) Track Start
+- Correct profile/Kp/Kd loaded
+- First run at reduced speed
+- Observe 1 full lap before race pace
+
+## 6) Final Go/No-Go
+- No critical warnings in serial
+- Stable steering and lap counting
+- Team sign-off complete
+
+Sign: ____________________  Time: ____________________
+
+
+======================================
+FILE: WRO_Release_Notes_Template.md
+======================================
+# WRO Firmware Release Notes
+
+## Release
+- Version:
+- Date:
+- Author:
+
+## Summary
+Short description of what changed.
+
+## Changes
+- [ ] Safety
+- [ ] Control
+- [ ] Sensors
+- [ ] Diagnostics
+- [ ] Performance
+
+Detailed list:
+- 
+- 
+- 
+
+## Test Evidence
+- Scanner test result:
+- E-Stop test result:
+- Track test result:
+- Known limitations:
+
+## Rollback Plan
+- Previous stable version:
+- Steps to rollback:
+
+## Approval
+- Software lead:
+- Hardware lead:
+- Safety lead:
+
+
+======================================
+FILE: WRO_Risk_Register.md
+======================================
+# WRO Risk Register
+
+| ID | Risk | Impact | Likelihood | Detection | Mitigation | Owner |
+|----|------|--------|------------|-----------|------------|-------|
+| R1 | Camera frame loss | High | Medium | UART timeout warnings | Cable fixation, protocol validation, safe stop | Vision |
+| R2 | I2C noise / dropout | High | Medium | Scanner mismatch, encoder alarms | Short I2C wires, solid GND, retries | Electronics |
+| R3 | E-Stop hardware failure | Critical | Low | Preflight E-Stop test fail | Dual checks each run, button replacement policy | Safety |
+| R4 | IMU drift | Medium | Medium | Wrong lap increments | Recalibration, vibration isolation, dt clamp | Controls |
+| R5 | Wheel slip at high speed | High | Medium | Unstable line following | Speed ramping, turn speed limits, tire setup | Mechanics |
+| R6 | Brownout under load | High | Medium | Random resets | Battery health checks, power distribution improvements | Electronics |
+| R7 | Connector loosening | Medium | Medium | Intermittent failures | Strain relief, locking connectors, preflight inspection | Hardware |
+
+## Update rule
+- Review before every competition session.
+- Add new risks discovered in testing.
+- Track mitigation status weekly.
+
+
+======================================
+FILE: WRO_Robot_Assembly_and_Startup_Guide.md
+======================================
+# 🛠 Инструкция по сборке и запуску робота WRO (Для начинающих)
+
+Привет! Этот документ написан максимально просто и понятно. Представь, что мы собираем конструктор Lego, только с проводами и кодом. Делай всё **строго по порядку**, не перепрыгивай через шаги. Если что-то не работает — скорее всего, где-то отошел проводок.
+
+---
+
+## 🧲 ЭТАП 1. Собираем "Железо" (Провода и Питание)
+
+Самое главное правило робототехники: **"Электроника работает на синем дыме. Если дым вышел — она больше не работает"**. Будь внимателен с плюсом и минусом!
+
+*   [ ] **Шаг 1. Питание (Откуда берем энергию):**
+    *   У робота есть аккумулятор (обычно LiPo 7.4V или 11.1V). У него два провода: Красный (`+`) и Черный (`-`).
+    *   Толстые провода от аккумулятора вставляем в драйвер мотора (большая плата BTS7960) в разъемы `VCC` (красный) и `GND` (черный). 
+    *   **Подводный камень!** Мозгам робота (ESP32) и камере (OpenMV) нужно ровно 5 Вольт. Если дать им 7.4V от батареи — они сгорят с искрами! Поэтому между батареей и мозгами ставим плату понижения напряжения (Step-Down модуль). Крутим на ней винтик отверткой, пока мультиметр не покажет ровно 5.0V. И только потом подключаем к ESP32!
+    *   **САМОЕ ВАЖНОЕ В МИРЕ ПРАВИЛО:** Соедини все черные провода (GND) вместе! Минус от батареи, минус от ESP32, минус от камеры — всё должно звониться в одну точку. Если этого не сделать, робот будет вести себя как сумасшедший.
+
+*   [ ] **Шаг 2. Подключаем датчики (Мультиплексор TCA9548A):**
+    *   Это маленькая плата-перекресток.
+    *   Провода от ESP32: пин `21` соедини с ногой `SDA` на TCA. Пин `22` соедини с `SCL` на TCA.
+    *   Дальше от TCA идут провода к самим датчикам:
+        *   К разъемам (каналу) `SD0/SC0` подключаем гироскоп (ICM-20948).
+        *   К `SD1/SC1` подключаем левый магнитный энкодер на колесе (AS5600).
+        *   К `SD2/SC2` подключаем правый энкодер на колесе (AS5600).
+
+*   [ ] **Шаг 3. Подключаем руль и мотор:**
+    *   **Руль (Сервомотор):** Желтый/Белый провод воткни в пин `18` на ESP32. Красному дай 5V, коричневому/черному — GND.
+    *   **Мотор:** От драйвера BTS7960 идут тонкие провода. `R_EN` вставь в `19`, `L_EN` в `23`. А провода скорости `R_PWM` и `L_PWM` вставь в `5` и `14`.
+
+*   [ ] **Шаг 4. Подключаем Глаза (Камера OpenMV):**
+    *   Чтобы камера могла "говорить" с ESP32, нужно два провода крест-накрест.
+    *   Пин `P4 (TX)` на камере вставь в `16 (RX)` на ESP32.
+    *   Пин `P5 (RX)` на камере вставь в `17 (TX)` на ESP32.
+    *   *(Запомни: TX (передатчик) всегда говорит в RX (приемник))*.
+
+*   [ ] **Шаг 5. Кнопки:**
+    *   **Кнопка СТОП (Грибок):** Подключи один хвост кнопки к пину `32` на ESP32, а второй к `GND`. Когда кнопка нажата, робот замирает.
+    *   **Переключатель режимов (Open/Obstacle):** Один хвост в пин `4`, второй в `GND`. Щелк-щелк — робот меняет стратегию езды.
+
+---
+
+## 👁️ ЭТАП 2. Настраиваем Зрение (Камера OpenMV)
+
+Камера видит мир иначе, чем мы. Для неё красный цвет вечером и красный цвет утром — это два разных цвета!
+
+*   [ ] **Шаг 1:** Скачай на компьютер программу **OpenMV IDE**.
+*   [ ] **Шаг 2:** Подключи камеру кабелем к ноуту. Нажми кнопку "Кронштейн" (Connect) в левом нижнем углу программы.
+*   [ ] **Шаг 3:** Скопируй весь код из нашего файла `openmv_main.py` и вставь в окно программы.
+*   [ ] **Шаг 4 (Калибруем цвета - очень важно!):**
+    *   Положи на пол красный цилиндр. Посмотри в камеру через комп.
+    *   В меню сверху нажми: `Tools -> Machine Vision -> Threshold Editor`.
+    *   Вытащи из списка `Frame Buffer`.
+    *   Двигай 6 ползунков внизу так, чтобы на экране весь фон стал абсолютно черным, а **только цилиндр** стал белым пятном. Никакого шума на фоне быть не должно!
+    *   Скопируй эти 6 цифр. Вставь их в код камеры в строчку `THRESHOLD_RED = (сюда)`.
+    *   Сделай то же самое для Зеленого цилиндра, Синей и Оранжевой линии.
+    *   *Подводный камень:* Настраивай цвета ТОЛЬКО на месте соревнований. Освещение решает всё.
+*   [ ] **Шаг 5 (Дальномер):**
+    *   Поставь цилиндр ровно в 20 сантиметрах от камеры.
+    *   Запусти код (зеленая кнопка Play). Посмотри, что пишет на экране (например "D: 35").
+    *   Если пишет не 20, найди строку `int(2000 / blob.w())` и поменяй число `2000` на `1500` или `3000`, пока не станет показывать честные 20 см.
+*   [ ] **Шаг 6:** Зайди в меню `Tools -> Save open script to OpenMV (main.py)`. Это сохранит код внутрь камеры. Теперь комп камере не нужен.
+
+---
+
+## 🧠 ЭТАП 3. Прошиваем Мозги (ESP32)
+
+*   [ ] **Шаг 1:** Скачай программу **Arduino IDE**.
+*   [ ] **Шаг 2:** Добавь поддержку ESP32 (Зайди в настройки, вставь ссылку для менеджера плат, нагугли "как добавить ESP32 в Arduino IDE", это займет минуту).
+*   [ ] **Шаг 3:** Слева нажми на иконку "Книги" (Менеджер библиотек). Напиши в поиске и установи две штуки:
+    *   `Adafruit ICM20948` (нажми "Install all" если спросит про зависимости).
+    *   `ESP32Servo` (от автора Kevin Harrington).
+*   [ ] **Шаг 4:** Открой наш файл `eps323.cpp` в Arduino IDE.
+*   [ ] **Шаг 5:** Подключи ESP32 к компу по USB. Выбери порт сверху. Нажми стрелочку вправо (Upload/Загрузка).
+    *   *Подводный камень:* Если внизу долго висит надпись `Connecting...`, зажми маленькую кнопочку **BOOT** на самой плате ESP32 пальцем и держи, пока не побегут проценты загрузки!
+
+---
+
+## 🧪 ЭТАП 4. Безопасные Тесты ("На столе")
+
+**КРИТИЧЕСКИ ВАЖНО:** Никогда не ставь свежесобранного робота сразу на пол! Если датчики перепутаны, он врежется в стену на скорости 100% и сломает тяги руля.
+
+*   [ ] **Шаг 1:** Поставь робота на кирпич или подставку. Колеса должны висеть в воздухе!
+*   [ ] **Шаг 2:** Включи питание аккумулятора.
+*   [ ] **Шаг 3:** Открой в Arduino IDE "Монитор Порта" (иконка лупы справа сверху). Выстави внизу скорость `115200`.
+*   [ ] **Шаг 4 (Гироскоп):** На экране побегут строчки "Калибровка гироскопа... НЕ ДВИГАЙ!". **Не трогай робота вообще**, пока он не напишет "ГОТОВА".
+*   [ ] **Шаг 5 (Камера):** Помаши перед мордой робота красным цилиндром. Сервопривод должен зажужжать и повернуть колеса!
+*   [ ] **Шаг 6 (Энкодеры):** Крутани заднее колесо рукой. Цифры на экране компа должны меняться.
+*   Если всё крутится правильно — можно ставить на пол.
+
+---
+
+## 🏎️ ЭТАП 5. Регулировка на трассе (Учим ездить плавно)
+
+Робот уже умеет ездить, но едет он как новичок-ученик. Нам нужно настроить ПИД-регулятор (PID). Это как чувствительность руля.
+
+*   [ ] **Шаг 1:** Поставь робота на линию старта. Включи. Дождись окончания калибровки (робот мигнет лампочкой или рулем).
+*   [ ] **Шаг 2 (Квалификация - Скорость):**
+    *   Щелкни тумблер так, чтобы на экране компа написало "РЕЖИМ: OPEN CHALLENGE".
+    *   Отпусти кнопку E-STOP. Робот поедет.
+    *   Смотри на него:
+        *   Робот виляет влево-вправо как пьяный?  -> В файле `eps323.cpp` найди `float PID_KP = 0.50f;` и **уменьши** до `0.30f`. Зашей заново.
+        *   Робот не успевает повернуть и врезается в стену? -> **Увеличь** `PID_KP` до `0.80f`.
+*   [ ] **Шаг 3 (Финал - Препятствия):**
+    *   Щелкни тумблер в режим Obstacle. Расставь цилиндры.
+    *   Если робот объезжает цилиндры чересчур близко и задевает их боком -> Найди в коде (в самом низу, где Obstacle Challenge) цифры `dynamicErrorOffset = 35;` и `dynamicErrorOffset = -35;`. Увеличь их до `45` и `-45` соответственно. Робот станет брать радиус шире.
+*   [ ] **Шаг 4 (Линия финиша):**
+    *   Робот после 3 кругов должен остановиться на старте. Если он пролетает стартовую зону — найди вверху кода `FINISH_ZONE_CM = 100` и уменьши цифру.
+
+### 🎉 Ура! Ты собрал, запрограммировал и настроил настоящего беспилотного робота. Вы готовы к соревнованиям WRO! Никогда не сдавайтесь, если что-то не получается с первого раза. Трек покажет, кто лучше готов!
+
+======================================
+FILE: WRO_Robot_Master_Checklist_2026-03-27.md
+======================================
+# WRO Future Engineers — Robot Master Checklist
+
+Date: 27 March 2026
+Team: ____________________
+Robot Version: ____________________
+Firmware Version: ____________________
+
+---
+
+## 1) Goal of this file
+Use this checklist before every test and race run to make sure the robot is safe, stable, and ready.
+
+---
+
+## 2) Hardware Required (Minimum)
+
+### Controller and logic
+- ESP32 DevKitC V4
+- TCA9548A I2C multiplexer
+- ICM-20948 IMU
+- AS5600 encoder x2
+- OpenMV H7 Plus camera (or configured equivalent)
+
+### Motion and power
+- BTS7960 motor driver
+- DC drive motor
+- Steering servo JX PDI-6221MG
+- Stable battery for motor + logic power strategy
+- Main power switch
+- Emergency stop button (physical, normally HIGH with pull-up in code)
+
+### Wiring and mechanics
+- Good quality wires + crimped connectors
+- Common GND between ESP32, driver, sensors, camera
+- Mounted sensors with vibration reduction
+- Proper servo horn alignment at center position
+
+---
+
+## 3) Required Wiring Map (must match firmware)
+
+### ESP32 pins
+- I2C SDA: GPIO 21
+- I2C SCL: GPIO 22
+- Servo PWM: GPIO 18
+- BTS7960 R_EN: GPIO 19
+- BTS7960 L_EN: GPIO 23
+- BTS7960 R_PWM: GPIO 5
+- BTS7960 L_PWM: GPIO 14
+- Camera UART RX: GPIO 16
+- Camera UART TX: GPIO 17
+- E-Stop input: GPIO 32
+- Status LED: GPIO 2
+
+### TCA9548A channel mapping
+- Channel 0: ICM-20948 (expected 0x69)
+- Channel 1: AS5600 left (0x36)
+- Channel 2: AS5600 right (0x36)
+- Channel 3-7: empty (unless intentionally used)
+
+### Multiplexer base address
+- TCA9548A: 0x70 (A0/A1/A2 to GND)
+
+---
+
+## 4) Software/Library Requirements
+
+### Arduino IDE / PlatformIO
+- ESP32 board package installed
+- Correct board profile selected
+- Serial monitor at 115200 baud
+
+### Libraries
+- Wire (built-in)
+- ESP32Servo
+- Adafruit ICM20948
+- Adafruit Unified Sensor
+
+### Code files
+- scanerI2C.cpp (diagnostic scanner)
+- eps323.cpp (main race logic)
+
+---
+
+## 5) Safety Requirements (non-negotiable)
+- Emergency stop works instantly in all states
+- On E-Stop: motor speed goes to 0 and steering centers
+- Camera timeout triggers safe stop
+- Persistent encoder failure triggers safe stop
+- Robot starts with motor output = 0
+- Test with wheels lifted before floor tests
+
+---
+
+## 6) Pre-Flight Procedure (every run)
+
+### Step A — Visual and electrical
+- Check all connectors for looseness
+- Check no exposed short points
+- Verify battery voltage in safe range
+- Verify common GND continuity
+
+### Step B — Sensor bus check
+1. Upload and run scanerI2C.cpp
+2. Confirm:
+   - TCA9548A detected at 0x70
+   - CH0 has IMU at expected address
+   - CH1 and CH2 have AS5600
+   - No unexpected devices on empty channels
+3. Fix wiring before continuing if mismatch appears
+
+### Step C — Main firmware check
+1. Upload eps323.cpp
+2. Open serial output
+3. Confirm boot sequence:
+   - IMU init OK
+   - Gyro calibration completes
+   - System ready message appears
+4. Trigger E-Stop physically and verify immediate stop
+
+### Step D — Actuator sanity
+- Steering centered at startup
+- Left/right steering direction correct
+- Motor direction matches intended forward command
+- No motor jitter when target speed is 0
+
+---
+
+## 7) Calibration Requirements
+
+### IMU gyro
+- Keep robot still during calibration
+- Repeat calibration if large yaw drift appears while stationary
+
+### Steering center
+- Mechanical wheels straight at SERVO_CENTER
+- Adjust horn physically first, code trim second
+
+### Camera pipeline
+- Ensure UART message format is exactly: error,distance\n
+- Validate valid ranges in runtime:
+  - errorX: -160 to 160
+  - distance: 0 to 10000
+
+### PID tuning
+- Start with conservative values
+- Tune Kp first, then Kd
+- Use fixed test track and record results
+
+---
+
+## 8) Runtime Health Indicators to Watch
+- Camera timeout warnings
+- Encoder loss alarms
+- Unexpected lap jumps
+- E-Stop release/engage logs
+- Oscillation in steering (too high Kp)
+- Slow correction (too low Kp)
+
+---
+
+## 9) Track Testing Plan (must do in order)
+1. Static test on stand (wheels off ground)
+2. Straight-line short run
+3. Controlled turns at low speed
+4. Full lap at reduced speed
+5. Race speed trials with repeated runs
+6. Stress test with quick re-start and E-Stop events
+
+Record each run:
+- Kp/Kd
+- Battery voltage
+- Floor condition
+- Laps completed
+- Failure mode if any
+
+---
+
+## 10) Common Failure Modes + Quick Fixes
+
+### TCA/IMU not found
+- Recheck channel mapping and address
+- Recheck 3.3V/GND/SDA/SCL
+- Reduce bus noise, shorten I2C wires
+
+### Random camera loss
+- Verify OpenMV UART baud and packet format
+- Check RX/TX crossed correctly
+- Improve cable fixation and grounding
+
+### Encoder dropouts
+- Check AS5600 supply and magnet alignment
+- Check I2C pull-ups and wiring quality
+- Confirm channel selection logic
+
+### Car oscillates strongly
+- Lower Kp
+- Increase damping (Kd) slightly
+- Reduce max speed in sharp turns
+
+### Robot drifts in heading
+- Recalibrate gyro bias
+- Reduce vibration near IMU
+- Validate dt stability and integration behavior
+
+---
+
+## 11) Competition-Day Checklist
+- Spare wires/connectors/sensors ready
+- Backup flashed ESP32 ready
+- Printed wiring map available
+- Final tested firmware version tagged
+- Battery fully charged and verified
+- Tool kit ready (hex keys, screwdrivers, tape, zip ties)
+- Last full pre-flight completed and signed
+
+Sign-off:
+- Hardware lead: ____________________
+- Software lead: ____________________
+- Safety lead: ____________________
+- Time: ____________________
+
+---
+
+## 12) Suggested Next Improvements
+- Add formal finite-state machine: INIT, READY, RUN, SAFE_STOP, FINISH
+- Add acceleration ramp limiter for smoother traction
+- Add telemetry CSV output for data-driven tuning
+- Add watchdog/reset strategy for long runs
+- Add config header with all tunables in one place
+
+
+======================================
+FILE: WRO_Test_Log.csv
+======================================
+date,track,firmware,scanner_ok,imu_ok,encoders_ok,camera_ok,estop_ok,laps_completed,finish_status,max_speed_profile,issues,action_items,operator
+
+
+======================================
+FILE: WRO_Track_Test_Cases.md
+======================================
+# WRO Track Test Cases
+
+## TC-01 Stand Safety Test
+- Goal: verify no unexpected motion at startup
+- Steps: power on with wheels lifted
+- Pass: steering centers, motor output is zero
+
+## TC-02 E-Stop Reaction
+- Goal: immediate stop in motion
+- Steps: command motion, press E-Stop
+- Pass: motor speed zero + steering center instantly
+
+## TC-03 Camera Timeout Stop
+- Goal: fail-safe on vision loss
+- Steps: disconnect camera UART while running
+- Pass: warning in serial and safe stop
+
+## TC-04 Encoder Loss Handling
+- Goal: critical encoder failure lockout
+- Steps: disconnect one encoder and run
+- Pass: encoder alarm then motion blocked until recovery
+
+## TC-05 Lap Counting Stability
+- Goal: verify stable lap increments
+- Steps: run 3 laps with consistent direction
+- Pass: lap count increments correctly, no extra jumps
+
+## TC-06 Recovery Behavior
+- Goal: smooth resume after temporary fault
+- Steps: induce short sensor fault then recover
+- Pass: robot resumes control without unsafe jump
+
+## Record for each test
+- Date/time
+- Firmware version
+- Track condition
+- Battery voltage
+- Result: PASS/FAIL
+- Notes and follow-up action
+
+
+======================================
+FILE: WRO_Wiring_Map.md
+======================================
+# WRO Wiring Map
+
+## ESP32 Pin Mapping
+- GPIO21 -> I2C SDA
+- GPIO22 -> I2C SCL
+- GPIO18 -> Steering Servo PWM
+- GPIO19 -> BTS7960 R_EN
+- GPIO23 -> BTS7960 L_EN
+- GPIO5  -> BTS7960 R_PWM
+- GPIO14 -> BTS7960 L_PWM
+- GPIO16 -> UART RX (to OpenMV TX)
+- GPIO17 -> UART TX (to OpenMV RX)
+- GPIO32 -> E-Stop input (pull-up)
+- GPIO2  -> Status LED
+
+## I2C / TCA9548A
+- TCA address: 0x70
+- CH0 -> ICM-20948 (0x69 expected)
+- CH1 -> AS5600 left (0x36)
+- CH2 -> AS5600 right (0x36)
+- CH3 -> VL53L1X left (0x29)
+- CH4 -> VL53L1X right (0x29)
+- CH5..CH7 -> empty by default
+
+## Power and Ground
+- Common GND across ESP32, BTS7960, sensors, camera
+- Keep logic/signal wiring short and secured
+- Check polarity before every power-up
+
+
