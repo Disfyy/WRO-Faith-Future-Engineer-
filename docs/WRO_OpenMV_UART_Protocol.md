@@ -1,30 +1,51 @@
-# OpenMV UART Protocol for ESP32
+# OpenMV → ESP32 UART Protocol v3.0
 
-## Frame Format (3 fields)
-Single line, ASCII:
-errorX,distance,objectType\n
-Example:
--12,145,1
+## Frame Format
+```
+RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n
+```
 
-## Field Ranges (expected by firmware)
-- errorX: -160 .. 160
-- distance: 0 .. 10000
-- objectType:
-	- 0: нет объекта / фон
-	- 1: оранжевая линия (курс +)
-	- 2: синяя линия (курс -)
-	- 3: красный столбик (объезд вправо)
-	- 4: зелёный столбик (объезд влево)
+## Fields
 
-## Requirements
-- Baud: 115200
-- 8N1
-- End each frame with \n (\r optional before \n)
-- Exactly two commas per frame
-- Avoid empty frames
+| # | Поле | Диапазон | Описание |
+|---|------|----------|----------|
+| 1 | `RedX` | -160..160 | X красного столба (0 если нет) |
+| 2 | `RedDist` | 0..999 | Дистанция до красного (см), 999 = нет |
+| 3 | `GreenX` | -160..160 | X зелёного столба (0 если нет) |
+| 4 | `GreenDist` | 0..999 | Дистанция до зелёного (см), 999 = нет |
+| 5 | `ModeFlag` | 0..15 | Битовое поле (см. ниже) |
+| 6 | `ExtraTag` | -160..999 | Доп. данные (см. ниже) |
 
-## Validation Rules in ESP32
-- Frame must contain exactly two commas
-- All three parts must be non-empty
-- Values must pass range limits above
-- On timeout, camera marked offline and safeStop triggered
+## ModeFlag (побитовый)
+
+| Бит | Значение | Флаг |
+|-----|----------|------|
+| 0 | `1` | Оранжевая линия видна (CW) |
+| 1 | `2` | Синяя линия видна (CCW) |
+| 2 | `4` | Малиновый блок виден (парковка) |
+| 3 | `8` | Чёрная стена близко (<40 см) |
+
+## ExtraTag
+
+- Если `ModeFlag & 4` (малиновый блок) → X-позиция блока (-160..160)
+- Если `ModeFlag & 8` (стена) → дистанция до стены (см)
+- Иначе → `0`
+
+## Example
+```
+-25,42,30,58,1,0*7F
+```
+Красный столб: X=-25, 42 см | Зелёный: X=30, 58 см | Оранжевая линия видна | CRC=7F
+
+## CRC (XOR Checksum)
+```
+cs = XOR всех символов строки данных (до '*')
+Формат: 2-символьный HEX после '*'
+```
+
+## Требования
+- Baud: `115200`, `8N1`
+- Каждый пакет оканчивается `\n`
+- `*XX` CRC обязателен
+- 5 запятых = 6 полей
+- Timeout ESP32: `500ms` → камера offline → fallback гироскоп

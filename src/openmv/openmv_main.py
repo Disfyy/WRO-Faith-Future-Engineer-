@@ -1,100 +1,220 @@
 import sensor, image, time, math
 from pyb import UART, LED
 
-# ==========================================
-# WRO Future Engineers — OpenMV Vision Code
-# ==========================================
+# ============================================================
+# WRO Future Engineers — OpenMV Vision v3.0
+# ============================================================
+# Протокол v3.0:
+#   RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*CS\n
+#
+# ModeFlag (побитовый):
+#   bit 0 (1)  = оранжевая линия видна (CW)
+#   bit 1 (2)  = синяя линия видна (CCW)
+#   bit 2 (4)  = малиновый блок виден (парковка)
+#   bit 3 (8)  = чёрная стена близко (blind turn)
+#
+# ExtraTag:
+#   Если малиновый блок виден → X-позиция блока (-160..160)
+#   Если стена близко → расстояние до стены (см)
+#   Иначе → 0
+# ============================================================
 
-# Настройка сенсора
+# --- Сенсор ---
 sensor.reset()
-sensor.set_pixformat(sensor.RGB565) # Цветной формат
-sensor.set_framesize(sensor.QQVGA)  # 160x120 - идеальный баланс скорости и качества
-sensor.skip_frames(time = 2000)
-sensor.set_auto_gain(False)         # ВЫКЛЮЧИТЬ! Иначе цвета "поплывут" от освещения
-sensor.set_auto_whitebal(False)     # ВЫКЛЮЧИТЬ!
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.QQVGA)    # 160×120
+sensor.skip_frames(time=2000)
+sensor.set_auto_gain(False)
+sensor.set_auto_whitebal(False)
+sensor.set_auto_exposure(False, exposure_us=10000)
 
-# Настройка UART (Baudrate должно совпадать с ESP32: 115200)
-# На OpenMV H7 Plus: TX = P4, RX = P5
+# --- UART ---
 uart = UART(3, 115200, timeout_char=1000)
+led_red   = LED(1)
+led_green = LED(2)
 
-led = LED(1) # Красный светодиод для индикации
+# ============================================================
+# ПОРОГИ (LAB). ОБЯЗАТЕЛЬНО КАЛИБРОВАТЬ НА ТРЕКЕ!
+# Tools → Threshold Editor в OpenMV IDE
+# ============================================================
+THRESHOLD_RED     = (30, 60,  30,  80,  10,  60)   # Красный столб
+THRESHOLD_GREEN   = (30, 70, -60, -20,  10,  50)   # Зелёный столб
+THRESHOLD_ORANGE  = (50, 80,  20,  60,  20,  70)   # Оранжевая линия (CW)
+THRESHOLD_BLUE    = (20, 50, -20,  20, -60, -20)   # Синяя линия (CCW)
+THRESHOLD_MAGENTA = (30, 60,  20,  60, -40, -10)   # Малиновый блок парковки
+THRESHOLD_WALL    = ( 0, 20, -10,  10, -10,  10)   # Чёрная стена
 
-# ==========================================
-# ПОРОГИ ЦВЕТОВ (НАСТРАИВАТЬ НА ТРЕКЕ!!!)
-# ==========================================
-# Формат: (L Min, L Max, A Min, A Max, B Min, B Max)
-THRESHOLD_ORANGE = (50, 80,  20,  60,  20,  70)  # Type 1 (Направление)
-THRESHOLD_BLUE   = (20, 50, -20,  20, -60, -20)  # Type 2 (Направление)
-THRESHOLD_RED    = (30, 60,  30,  80,  10,  60)  # Type 3 (Препятствие красное)
-THRESHOLD_GREEN  = (30, 70, -60, -20,  10,  50)  # Type 4 (Препятствие зеленое)
-THRESHOLD_WALL   = ( 0, 20, -10,  10, -10,  10)  # Черный цвет бортов для слепых поворотов
+# --- Экран ---
+IMG_W    = 160
+IMG_H    = 120
+CENTER_X = IMG_W // 2   # 80
 
-CENTER_X = 80 # Середина экрана для QQVGA (160 / 2)
+# --- ROI ---
+ROI_PILLARS  = (0, 0,   IMG_W, 90)    # Столбы — верхние 3/4
+ROI_LINES    = (0, 40,  IMG_W, 80)    # Линии — средняя и нижняя часть
+ROI_WALL     = (0, 60,  IMG_W, 60)    # Стена — нижняя половина
+ROI_MAGENTA  = (0, 50,  IMG_W, 70)    # Малиновые блоки — средне-нижняя зона
+
+# --- Минимальные размеры ---
+MIN_PIX_PILLAR  = 50
+MIN_PIX_LINE    = 100
+MIN_PIX_WALL    = 180
+MIN_PIX_MAGENTA = 60
+
+# --- Фокусная константа ---
+# КАЛИБРОВКА: столбик на 20 см → FOCAL = 20 × blob.w()
+FOCAL_CONST = 2000
 
 clock = time.clock()
 
-def get_distance_cm(blob):
-    # Фокусное расстояние / ширину пикселей.
-    # КОНСТАНТУ 2000 НУЖНО ПОДОБРАТЬ! Поставьте блок на 20см и поменяйте константу, чтобы выдавало 20.
-    if blob.w() == 0: return 999
-    return int(2000 / blob.w()) 
+# ============================================================
+def get_distance(blob):
+    if blob.w() < 2:
+        return 999
+    return min(int(FOCAL_CONST / blob.w()), 999)
 
-while(True):
+def calc_checksum(s):
+    cs = 0
+    for ch in s:
+        cs ^= ord(ch)
+    return cs & 0xFF
+
+def find_closest(blob_list):
+    """Ближайший блоб (самый широкий = самый близкий)."""
+    if not blob_list:
+        return None
+    best = blob_list[0]
+    for b in blob_list[1:]:
+        if b.w() > best.w():
+            best = b
+    return best
+
+def find_largest(blob_list):
+    if not blob_list:
+        return None
+    best = blob_list[0]
+    for b in blob_list[1:]:
+        if b.pixels() > best.pixels():
+            best = b
+    return best
+
+# ============================================================
+# ГЛАВНЫЙ ЦИКЛ
+# ============================================================
+while True:
     clock.tick()
     img = sensor.snapshot()
-    
-    # Дефолтные значения для отправки в ESP
-    error_x = 0
-    distance = 999
-    obj_type = 0 
-    
-    best_blob = None
-    max_pixels = 0
-    
-    # 1. Поиск важных цветных объектов (Препятствия и метки направления)
-    # Ищем объединяя 4 цвета. pixels_threshold отсекает мелкий шум.
-    blobs = img.find_blobs([THRESHOLD_ORANGE, THRESHOLD_BLUE, THRESHOLD_RED, THRESHOLD_GREEN], 
-                             pixels_threshold=100, area_threshold=100, merge=True)
-                             
-    for blob in blobs:
-        if blob.pixels() > max_pixels:
-            best_blob = blob
-            max_pixels = blob.pixels()
-            
-    if best_blob:
-        # Если нашли цветной объект, определяем его тип по битовой маске (code)
-        if best_blob.code() == 1:   obj_type = 1 # Orange
-        elif best_blob.code() == 2: obj_type = 2 # Blue
-        elif best_blob.code() == 4: obj_type = 3 # Red
-        elif best_blob.code() == 8: obj_type = 4 # Green
-        
-        # Расчет ошибки для рулежки ESP32
-        error_x = best_blob.cx() - CENTER_X
-        # Расчет дистанции
-        distance = get_distance_cm(best_blob)
-        
-        # Отрисовка на экране IDE для удобной отладки
-        img.draw_rectangle(best_blob.rect(), color=(255, 255, 255))
-        img.draw_cross(best_blob.cx(), best_blob.cy())
-        img.draw_string(best_blob.x(), best_blob.y() - 10, "T:%d D:%d" % (obj_type, distance), color=(255,255,255))
 
-    else:
-        # 2. Если препятствий нет, ищем черные стены (для функции Blind Turn)
-        # Ищем черную стену в нижней половине кадра
-        wall_blobs = img.find_blobs([THRESHOLD_WALL], roi=(0, 60, 160, 60), pixels_threshold=200, merge=True)
+    # --- Результат: 6 полей ---
+    red_x    = 0;   red_dist   = 999
+    green_x  = 0;   green_dist = 999
+    mode_flag = 0;  extra_tag  = 0
+
+    # =========================
+    # 1. КРАСНЫЕ СТОЛБЫ
+    # =========================
+    red_blobs = img.find_blobs([THRESHOLD_RED],
+                                roi=ROI_PILLARS,
+                                pixels_threshold=MIN_PIX_PILLAR,
+                                area_threshold=MIN_PIX_PILLAR,
+                                merge=True)
+    best_red = find_closest(red_blobs)
+    if best_red:
+        red_x    = best_red.cx() - CENTER_X
+        red_dist = get_distance(best_red)
+        img.draw_rectangle(best_red.rect(), color=(255, 50, 50))
+        img.draw_cross(best_red.cx(), best_red.cy(), color=(255, 50, 50))
+        img.draw_string(best_red.x(), best_red.y()-10,
+                        "R D:%d" % red_dist, color=(255,50,50), scale=1)
+
+    # =========================
+    # 2. ЗЕЛЁНЫЕ СТОЛБЫ
+    # =========================
+    green_blobs = img.find_blobs([THRESHOLD_GREEN],
+                                  roi=ROI_PILLARS,
+                                  pixels_threshold=MIN_PIX_PILLAR,
+                                  area_threshold=MIN_PIX_PILLAR,
+                                  merge=True)
+    best_green = find_closest(green_blobs)
+    if best_green:
+        green_x    = best_green.cx() - CENTER_X
+        green_dist = get_distance(best_green)
+        img.draw_rectangle(best_green.rect(), color=(50, 255, 50))
+        img.draw_cross(best_green.cx(), best_green.cy(), color=(50, 255, 50))
+        img.draw_string(best_green.x(), best_green.y()-10,
+                        "G D:%d" % green_dist, color=(50,255,50), scale=1)
+
+    # =========================
+    # 3. ОРАНЖЕВАЯ / СИНЯЯ ЛИНИЯ → ModeFlag
+    # =========================
+    orange_blobs = img.find_blobs([THRESHOLD_ORANGE],
+                                   roi=ROI_LINES,
+                                   pixels_threshold=MIN_PIX_LINE,
+                                   merge=True)
+    if orange_blobs:
+        mode_flag |= 1    # bit 0 = orange (CW)
+        b = find_largest(orange_blobs)
+        if b:
+            img.draw_rectangle(b.rect(), color=(255, 128, 0))
+
+    blue_blobs = img.find_blobs([THRESHOLD_BLUE],
+                                 roi=ROI_LINES,
+                                 pixels_threshold=MIN_PIX_LINE,
+                                 merge=True)
+    if blue_blobs:
+        mode_flag |= 2    # bit 1 = blue (CCW)
+        b = find_largest(blue_blobs)
+        if b:
+            img.draw_rectangle(b.rect(), color=(0, 128, 255))
+
+    # =========================
+    # 4. МАЛИНОВЫЙ БЛОК (парковка) → ModeFlag + ExtraTag
+    # =========================
+    magenta_blobs = img.find_blobs([THRESHOLD_MAGENTA],
+                                    roi=ROI_MAGENTA,
+                                    pixels_threshold=MIN_PIX_MAGENTA,
+                                    merge=True)
+    best_magenta = find_closest(magenta_blobs)
+    if best_magenta:
+        mode_flag |= 4    # bit 2 = magenta
+        extra_tag = best_magenta.cx() - CENTER_X
+        img.draw_rectangle(best_magenta.rect(), color=(255, 0, 255))
+        img.draw_string(best_magenta.x(), best_magenta.y()-10,
+                        "MAG", color=(255,0,255), scale=1)
+
+    # =========================
+    # 5. ЧЁРНАЯ СТЕНА → ModeFlag + ExtraTag
+    # =========================
+    if not (mode_flag & 4):  # Если нет малинового блока, проверяем стену
+        wall_blobs = img.find_blobs([THRESHOLD_WALL],
+                                     roi=ROI_WALL,
+                                     pixels_threshold=MIN_PIX_WALL,
+                                     merge=True)
         if wall_blobs:
-            # Берем самую низкую стену (ближайшую к нам по Y)
             closest_wall = max(wall_blobs, key=lambda b: b.y())
-            distance = get_distance_cm(closest_wall)
-            obj_type = 0 # Черная стена не является динамическим препятствием
-            error_x = 0
-            
-            img.draw_rectangle(closest_wall.rect(), color=(255, 0, 0))
-            img.draw_string(closest_wall.x(), closest_wall.y() - 10, "WALL D:%d" % distance, color=(255,0,0))
-    
-    # 3. Отправка данных на ESP32!
-    uart_string = "%d,%d,%d\n" % (error_x, distance, obj_type)
-    uart.write(uart_string)
-    
-    # Отладка в консоль (закомментировать на самих соревнованиях для ускорения FPS)
-    # print("FPS: %f | TX: %s" % (clock.fps(), uart_string.strip()))
+            w_dist = get_distance(closest_wall)
+            if w_dist < 40:  # Стена близко
+                mode_flag |= 8    # bit 3 = wall close
+                extra_tag = w_dist
+                img.draw_rectangle(closest_wall.rect(), color=(100, 100, 100))
+
+    # =========================
+    # 6. ОТПРАВКА ПО UART
+    # =========================
+    data_str = "%d,%d,%d,%d,%d,%d" % (red_x, red_dist, green_x, green_dist,
+                                       mode_flag, extra_tag)
+    cs = calc_checksum(data_str)
+    uart_msg = "%s*%02X\n" % (data_str, cs)
+    uart.write(uart_msg)
+
+    # LED: красный если видим столбы
+    if best_red or best_green:
+        led_red.on()
+    else:
+        led_red.off()
+
+    # LED: зелёный если видим парковку
+    if mode_flag & 4:
+        led_green.on()
+    else:
+        led_green.off()
