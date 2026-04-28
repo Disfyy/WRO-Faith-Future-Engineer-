@@ -1,0 +1,106 @@
+flowchart LR
+
+  classDef power fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000;
+  classDef gnd fill:#e0e0e0,stroke:#37474f,stroke-width:2px,color:#000;
+  classDef signal fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000;
+  classDef sensor fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000;
+  classDef brains fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000;
+  classDef star fill:#000000,color:#ffffff,shape:circle,stroke-width:4px,stroke:#ffeb3b;
+
+  subgraph PWR [1. Power Supply]
+    direction TB
+    BATT[LiPo 7.4V]:::power
+    SW[KCD3 Main Switch]:::power
+    LM5[LM2596 #1 / 5.0V]:::power
+    LM33[LM2596 #2 / 3.3V]:::power
+    C470[470uF Capacitor 5V]:::power
+    C104_5[0.1uF Filter 5V]:::power
+    C104_33[0.1uF Filter 3.3V]:::power
+    
+    BATT -- "+7.4V (Red)" --> SW
+    SW -- "+7.4V" --> LM5
+    SW -- "+7.4V" --> LM33
+    LM5 --- C470
+    LM5 --- C104_5
+    LM33 --- C104_33
+  end
+
+  subgraph BRAIN [2. Controllers]
+    direction TB
+    ESP[ESP32 DevKitC V4]:::brains
+    OMV[OpenMV H7 Plus]:::brains
+    ESTOP[E-STOP Button]:::signal
+    LED[Status LED + 220R]:::signal
+  end
+
+  subgraph DRIVE [3. Motor & Servo]
+    direction TB
+    BTS[BTS7960 Motor Driver]:::signal
+    MOT[Motor 380]:::power
+    SRV[JX PDI-6221MG Servo]:::signal
+    C104_BTS[0.1uF VCC-GND]:::gnd
+    CM[3x 0.1uF Motor EMI]:::gnd
+  end
+
+  subgraph I2CBUS [4. I2C Sensors]
+    direction TB
+    TCA[TCA9548A Mux]:::sensor
+    IMU[ICM-20948 0x69]:::sensor
+    ASL[AS5600 L 0x36]:::sensor
+    ASR[AS5600 R 0x36]:::sensor
+    TOF[VL53L1X x2]:::sensor
+    PULLUP[4.7k Pull-ups]:::gnd
+  end
+
+  %% Power Routing
+  LM5 -- "+5V -> VIN" --> ESP
+  LM5 -- "+5V -> VIN" --> OMV
+  LM5 -- "+5V (Red)" --> SRV
+  LM5 -- "+5V -> VCC" --> BTS
+
+  LM33 -- "+3.3V" --> PULLUP
+  LM33 -- "+3.3V -> VIN" --> TCA
+  LM33 -- "+3.3V -> VCC" --> IMU
+  LM33 -- "+3.3V -> VCC" --> ASL
+  LM33 -- "+3.3V -> VCC" --> ASR
+  LM33 -- "+3.3V -> VIN" --> TOF
+  SW -- "+7.4V -> B+" --> BTS
+
+  %% Signal Routing
+  ESP -- "GPIO16 (RX) <- P4 (TX)" --> OMV
+  ESP -- "GPIO17 (TX) -> P5 (RX)" --> OMV
+  ESP -- "GPIO32" --> ESTOP
+  ESP -- "GPIO2" --> LED
+
+  ESP -- "GPIO19 (R_EN), GPIO23 (L_EN), GPIO5 (RPWM), GPIO14 (LPWM)" --> BTS
+  BTS -- "M+, M-" --> MOT
+  MOT -. "EMI" .- CM
+  BTS -. "Logic Filter" .- C104_BTS
+  ESP -- "GPIO18 (PWM)" --> SRV
+
+  ESP -- "GPIO21 (SDA), GPIO22 (SCL)" --> PULLUP
+  PULLUP -- "SDA, SCL" --> TCA
+
+  TCA -- "CH0" --> IMU
+  TCA -- "CH1" --> ASL
+  TCA -- "CH2" --> ASR
+  TCA -- "CH3 / CH4" --> TOF
+
+  %% STAR GROUND ROUTING (Separated to reduce crossing)
+  STAR_GND(((STAR GND\nCenter Point))):::star
+
+  BATT -- "GND (-) (Black)" --> STAR_GND
+  STAR_GND -- "GND" --> LM5
+  STAR_GND -- "GND" --> LM33
+  STAR_GND -- "GND -> B-, Logic GND" --> BTS
+  STAR_GND -- "GND (Brown)" --> SRV
+  STAR_GND -- "GND" --> ESP
+  STAR_GND -- "GND" --> OMV
+  STAR_GND -- "Cathode" --> LED
+  STAR_GND -- "GND" --> ESTOP
+  STAR_GND -- "GND, A0, A1, A2" --> TCA
+  STAR_GND -- "GND" --> IMU
+  STAR_GND -- "GND, DIR" --> ASL
+  STAR_GND -- "GND, DIR" --> ASR
+  STAR_GND -- "GND" --> TOF
+

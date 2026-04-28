@@ -12,6 +12,8 @@ This folder contains firmware, diagnostics, and operation documents for the WRO 
 - WRO_Quick_Race_Checklist.md
 - WRO_Wiring_Map.md
 - WRO_OpenMV_UART_Protocol.md
+- WRO_Rule_Compliance_Matrix.md
+- WRO_Characteristics_Audit_2026-04-09.md
 
 ## Logs and templates
 - WRO_Test_Log.csv

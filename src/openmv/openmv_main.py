@@ -1,4 +1,6 @@
-import sensor, image, time, math
+import sensor
+import image
+import time
 from pyb import UART, LED
 
 # ============================================================
@@ -37,12 +39,12 @@ led_green = LED(2)
 # ПОРОГИ (LAB). ОБЯЗАТЕЛЬНО КАЛИБРОВАТЬ НА ТРЕКЕ!
 # Tools → Threshold Editor в OpenMV IDE
 # ============================================================
-THRESHOLD_RED     = (30, 60,  30,  80,  10,  60)   # Красный столб
-THRESHOLD_GREEN   = (30, 70, -60, -20,  10,  50)   # Зелёный столб
-THRESHOLD_ORANGE  = (50, 80,  20,  60,  20,  70)   # Оранжевая линия (CW)
-THRESHOLD_BLUE    = (20, 50, -20,  20, -60, -20)   # Синяя линия (CCW)
-THRESHOLD_MAGENTA = (30, 60,  20,  60, -40, -10)   # Малиновый блок парковки
-THRESHOLD_WALL    = ( 0, 20, -10,  10, -10,  10)   # Чёрная стена
+THRESHOLD_RED     = (30, 60, 30, 80, 10, 60)   # Красный столб
+THRESHOLD_GREEN   = (30, 70, -60, -20, 10, 50)   # Зелёный столб
+THRESHOLD_ORANGE  = (50, 80, 20, 60, 20, 70)   # Оранжевая линия (CW)
+THRESHOLD_BLUE    = (20, 50, -20, 20, -60, -20)   # Синяя линия (CCW)
+THRESHOLD_MAGENTA = (30, 60, 20, 60, -40, -10)   # Малиновый блок парковки
+THRESHOLD_WALL    = (0, 20, -10, 10, -10, 10)   # Чёрная стена
 
 # --- Экран ---
 IMG_W    = 160
@@ -50,10 +52,10 @@ IMG_H    = 120
 CENTER_X = IMG_W // 2   # 80
 
 # --- ROI ---
-ROI_PILLARS  = (0, 0,   IMG_W, 90)    # Столбы — верхние 3/4
-ROI_LINES    = (0, 40,  IMG_W, 80)    # Линии — средняя и нижняя часть
-ROI_WALL     = (0, 60,  IMG_W, 60)    # Стена — нижняя половина
-ROI_MAGENTA  = (0, 50,  IMG_W, 70)    # Малиновые блоки — средне-нижняя зона
+ROI_PILLARS  = (0, 0, IMG_W, 90)    # Столбы — верхние 3/4
+ROI_LINES    = (0, 40, IMG_W, 80)    # Линии — средняя и нижняя часть
+ROI_WALL     = (0, 60, IMG_W, 60)    # Стена — нижняя половина
+ROI_MAGENTA  = (0, 50, IMG_W, 70)    # Малиновые блоки — средне-нижняя зона
 
 # --- Минимальные размеры ---
 MIN_PIX_PILLAR  = 50
@@ -218,3 +220,5 @@ while True:
         led_green.on()
     else:
         led_green.off()
+
+    time.sleep_ms(20)

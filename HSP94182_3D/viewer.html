@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HSP 94182 — 3D Chassis Viewer (WRO Future Engineers)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0e0f12;
+        --panel: #161821;
+        --panel-2: #1c1f2a;
+        --text: #e7e9ee;
+        --muted: #8b90a0;
+        --accent: #5fb3ff;
+        --warn: #f0c020;
+        --line: #262936;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; }
+      #app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+      #side {
+        background: var(--panel); border-right: 1px solid var(--line);
+        padding: 18px; overflow-y: auto;
+      }
+      #side h1 { margin: 0 0 4px; font-size: 16px; letter-spacing: 0.2px; }
+      #side h2 { margin: 18px 0 8px; font-size: 12px; color: var(--muted);
+        text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
+      #side .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+      .row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 13px; }
+      .row label { flex: 1; color: var(--text); }
+      .row input[type="checkbox"] { accent-color: var(--accent); }
+      .btn {
+        display: block; width: 100%; padding: 9px 12px; margin-top: 8px;
+        background: var(--panel-2); border: 1px solid var(--line);
+        color: var(--text); border-radius: 8px; cursor: pointer;
+        font-size: 13px; text-align: center;
+      }
+      .btn:hover { border-color: var(--accent); color: var(--accent); }
+      .btn.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); font-weight: 600; }
+      .btn.primary:hover { color: #0b1220; opacity: 0.92; }
+      .specs { font-size: 12px; color: var(--muted); line-height: 1.7; }
+      .specs b { color: var(--text); font-weight: 600; }
+      #canvasWrap { position: relative; }
+      #canvas { width: 100%; height: 100%; display: block; }
+      #hint {
+        position: absolute; bottom: 14px; left: 14px;
+        background: rgba(20,22,30,0.85); border: 1px solid var(--line);
+        padding: 8px 12px; border-radius: 8px; font-size: 12px; color: var(--muted);
+        backdrop-filter: blur(8px);
+      }
+      #hint b { color: var(--text); }
+      #legend {
+        position: absolute; top: 14px; right: 14px;
+        background: rgba(20,22,30,0.85); border: 1px solid var(--line);
+        padding: 10px 14px; border-radius: 8px; font-size: 12px;
+        backdrop-filter: blur(8px); min-width: 180px;
+      }
+      #legend .item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+      #legend .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #00000040; }
+      .pill { display: inline-block; padding: 2px 7px; border: 1px solid var(--line);
+        border-radius: 999px; font-size: 11px; color: var(--muted); margin-right: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="side">
+        <h1>HSP 94182 1/16</h1>
+        <div class="sub">Шасси электрического турингового RC. WRO Future Engineers.</div>
+
+        <h2>Слои</h2>
+        <div class="row"><input type="checkbox" id="t-chassis" checked /><label for="t-chassis">Шасси и плита</label></div>
+        <div class="row"><input type="checkbox" id="t-suspension" checked /><label for="t-suspension">Подвеска и амортизаторы</label></div>
+        <div class="row"><input type="checkbox" id="t-wheels" checked /><label for="t-wheels">Колёса</label></div>
+        <div class="row"><input type="checkbox" id="t-drivetrain" checked /><label for="t-drivetrain">Трансмиссия</label></div>
+        <div class="row"><input type="checkbox" id="t-electronics" checked /><label for="t-electronics">Электрика и аккум.</label></div>
+        <div class="row"><input type="checkbox" id="t-body" checked /><label for="t-body">Бамперы и стойки</label></div>
+
+        <h2>Виды</h2>
+        <button class="btn" data-view="iso">Изометрия</button>
+        <button class="btn" data-view="top">Сверху</button>
+        <button class="btn" data-view="side">Сбоку</button>
+        <button class="btn" data-view="front">Спереди</button>
+
+        <h2>Экспорт</h2>
+        <button class="btn primary" id="exportGLB">Скачать .GLB</button>
+        <button class="btn" id="exportSTL">Скачать .STL</button>
+        <button class="btn" id="exportPNG">Снимок .PNG</button>
+
+        <h2>Спецификации</h2>
+        <div class="specs">
+          <b>Модель:</b> HSP 94182 (1/16 on-road)<br/>
+          <b>Длина:</b> 273 мм<br/>
+          <b>Ширина:</b> 155 мм<br/>
+          <b>Высота:</b> 78 мм<br/>
+          <b>База:</b> 205 мм<br/>
+          <b>Колея:</b> 130 мм<br/>
+          <b>Колёса:</b> ⌀54 × 22 мм<br/>
+          <b>Привод:</b> 4WD (карданный вал)<br/>
+          <b>Дифференциалы:</b> 2 шт. (перед/зад)
+        </div>
+
+        <h2>Условные обозначения</h2>
+        <div class="specs">
+          <span class="pill">Чёрный</span> пластик ABS<br/>
+          <span class="pill" style="color:#5fb3ff">Синий</span> алюминий 6061-T6<br/>
+          <span class="pill">Серебро</span> сталь / пружины<br/>
+          <span class="pill" style="color:#f0c020">Жёлтый</span> Li-Po пакет
+        </div>
+      </aside>
+      <div id="canvasWrap">
+        <canvas id="canvas"></canvas>
+        <div id="legend">
+          <div style="font-weight:600;margin-bottom:6px">Цвета и материалы</div>
+          <div class="item"><div class="swatch" style="background:#161616"></div>ABS пластик</div>
+          <div class="item"><div class="swatch" style="background:#1a6ec7"></div>Алюминий (анод.)</div>
+          <div class="item"><div class="swatch" style="background:#c8c8c8"></div>Сталь / пружины</div>
+          <div class="item"><div class="swatch" style="background:#f0c020"></div>Аккумулятор</div>
+          <div class="item"><div class="swatch" style="background:#f4f4f4;border-color:#888"></div>Диски колёс</div>
+        </div>
+        <div id="hint">
+          <b>ЛКМ</b> — вращать &nbsp;·&nbsp; <b>ПКМ</b> — двигать &nbsp;·&nbsp; <b>колесо</b> — зум
+        </div>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from 'three';
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+      import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+
+      // ============================================================
+      // HSP 94182 1/16 chassis — параметрическая 3D модель
+      // Все размеры в миллиметрах. Координаты:
+      //   X — лево/право (+X = правый борт)
+      //   Y — вверх (+Y = верх машины)
+      //   Z — вперёд/назад (+Z = перед)
+      // ============================================================
+      const P = {
+        wheelbase: 205,
+        track: 130,
+        wheel: { d: 54, w: 22, rim: 36 },
+        chassis: { L: 250, W: 80, T: 3, h: 12 },
+        bumper: { foamW: 150, foamH: 12, foamT: 28 },
+        shock: { L: 38, dCyl: 5, springD: 7.6 },
+        battery: { L: 78, W: 36, H: 18 }
+      };
+
+      // ===== Материалы (физически корректные) =====
+      const MAT = {
+        chassisBlack: new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.55, metalness: 0.05 }),
+        plastic:      new THREE.MeshStandardMaterial({ color: 0x202225, roughness: 0.6,  metalness: 0.05 }),
+        aluBlue:      new THREE.MeshStandardMaterial({ color: 0x1a6ec7, roughness: 0.32, metalness: 0.85 }),
+        aluDark:      new THREE.MeshStandardMaterial({ color: 0x2a3a55, roughness: 0.4,  metalness: 0.85 }),
+        steel:        new THREE.MeshStandardMaterial({ color: 0xc8c8c8, roughness: 0.32, metalness: 0.95 }),
+        spring:       new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.45, metalness: 0.9 }),
+        tire:         new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.95, metalness: 0.0 }),
+        rim:          new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.45, metalness: 0.1 }),
+        battery:      new THREE.MeshStandardMaterial({ color: 0xf0c020, roughness: 0.6,  metalness: 0.05 }),
+        batteryLabel: new THREE.MeshStandardMaterial({ color: 0xfff8e6, roughness: 0.7,  metalness: 0.0 }),
+        rubberDamper: new THREE.MeshStandardMaterial({ color: 0x101010, roughness: 0.85, metalness: 0.0 }),
+        gold:         new THREE.MeshStandardMaterial({ color: 0xc89a3a, roughness: 0.4,  metalness: 0.85 }),
+        wire:         new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 0.85, metalness: 0.0 })
+      };
+
+      // ===== Группы (для переключения слоёв) =====
+      const G = {
+        chassis: new THREE.Group(),
+        suspension: new THREE.Group(),
+        wheels: new THREE.Group(),
+        drivetrain: new THREE.Group(),
+        electronics: new THREE.Group(),
+        body: new THREE.Group()
+      };
+
+      // ============================================================
+      // ШАССИ (нижняя плита с облегчающими треугольными вырезами)
+      // ============================================================
+      function buildChassisPlate() {
+        const L = P.chassis.L, W = P.chassis.W, T = P.chassis.T;
+        // Контур плиты (вид сверху) — слегка зауженный к концам
+        const shape = new THREE.Shape();
+        const w = W / 2;
+        shape.moveTo(-L/2, -w*0.78);
+        shape.lineTo(-L/2 + 16, -w);
+        shape.lineTo(L/2 - 16, -w);
+        shape.lineTo(L/2, -w*0.78);
+        shape.lineTo(L/2, w*0.78);
+        shape.lineTo(L/2 - 16, w);
+        shape.lineTo(-L/2 + 16, w);
+        shape.lineTo(-L/2, w*0.78);
+        shape.lineTo(-L/2, -w*0.78);
+
+        // Облегчающие треугольные вырезы (как на фото)
+        const triHole = (cx, cz, size, rot=0) => {
+          const h = new THREE.Path();
+          const r = size / 2;
+          const a = rot;
+          for (let i = 0; i < 3; i++) {
+            const t = a + (i * 2 * Math.PI / 3);
+            const x = cx + Math.cos(t) * r;
+            const z = cz + Math.sin(t) * r;
+            if (i === 0) h.moveTo(x, z); else h.lineTo(x, z);
+          }
+          h.closePath();
+          shape.holes.push(h);
+        };
+        triHole(  60, 0, 30, Math.PI / 2);
+        triHole(   0, 0, 34, -Math.PI / 2);
+        triHole( -60, 0, 30, Math.PI / 2);
+
+        // Крепёжные отверстия
+        const hole = (x, z, r) => {
+          const h = new THREE.Path();
+          h.absarc(x, z, r, 0, Math.PI*2, true);
+          shape.holes.push(h);
+        };
+        for (const x of [-110, -90, 90, 110]) for (const z of [-25, 25]) hole(x, z, 1.6);
+
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: T, bevelEnabled: true, bevelSize: 0.4, bevelThickness: 0.4, bevelSegments: 1 });
+        geo.rotateX(-Math.PI / 2);
+        geo.translate(0, 0, 0);
+        const mesh = new THREE.Mesh(geo, MAT.chassisBlack);
+        mesh.castShadow = true; mesh.receiveShadow = true;
+        return mesh;
+      }
+
+      function buildSideRail(side = 1) {
+        // Боковые отбойники-щёчки (приподнятые рейки по бокам)
+        const geo = new THREE.BoxGeometry(180, 6, 4);
+        const mesh = new THREE.Mesh(geo, MAT.chassisBlack);
+        mesh.position.set(0, 4, side * (P.chassis.W / 2 + 1));
+        return mesh;
+      }
+
+      function buildUpperDeck() {
+        // Верхняя T-bone дека (под шасси, к ней крепятся башни и сервы)
+        const shape = new THREE.Shape();
+        const drawT = (path) => {
+          path.moveTo(-90, -10); path.lineTo(90, -10);
+          path.lineTo(90, 10); path.lineTo(20, 10);
+          path.lineTo(20, 38); path.lineTo(-20, 38);
+          path.lineTo(-20, 10); path.lineTo(-90, 10);
+          path.lineTo(-90, -10);
+        };
+        drawT(shape);
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: 2, bevelEnabled: false });
+        geo.rotateX(-Math.PI/2);
+        const mesh = new THREE.Mesh(geo, MAT.chassisBlack);
+        mesh.position.set(0, 14, 0);
+        return mesh;
+      }
+
+      // ============================================================
+      // АМОРТИЗАТОР (масляный) — синий колпак, чёрный корпус, пружина
+      // ============================================================
+      function buildShock() {
+        const grp = new THREE.Group();
+        const cylGeo = new THREE.CylinderGeometry(P.shock.dCyl/2, P.shock.dCyl/2, P.shock.L, 16);
+        const body = new THREE.Mesh(cylGeo, MAT.aluDark);
+        body.position.y = 0;
+        grp.add(body);
+
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.6, 4.2, 16), MAT.aluBlue);
+        cap.position.y = P.shock.L/2 + 1.2; grp.add(cap);
+        const eyeTop = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.8, 8, 20), MAT.aluBlue);
+        eyeTop.position.y = P.shock.L/2 + 4.6; eyeTop.rotation.x = Math.PI / 2; grp.add(eyeTop);
+
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 12, 12), MAT.steel);
+        shaft.position.y = -P.shock.L/2 - 6; grp.add(shaft);
+        const eyeBot = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.8, 8, 20), MAT.aluBlue);
+        eyeBot.position.y = -P.shock.L/2 - 12; eyeBot.rotation.x = Math.PI / 2; grp.add(eyeBot);
+
+        // Спиральная пружина вокруг корпуса (геометрия — лофт по тору)
+        const coilCount = 9;
+        const coilR = P.shock.springD / 2;
+        const wireR = 0.55;
+        const points = [];
+        const turns = coilCount;
+        const totalH = P.shock.L * 0.92;
+        const segs = 240;
+        for (let i = 0; i <= segs; i++) {
+          const t = i / segs;
+          const a = t * Math.PI * 2 * turns;
+          const y = -totalH/2 + t * totalH;
+          points.push(new THREE.Vector3(Math.cos(a) * coilR, y, Math.sin(a) * coilR));
+        }
+        const curve = new THREE.CatmullRomCurve3(points);
+        const tubeGeo = new THREE.TubeGeometry(curve, segs, wireR, 8, false);
+        const spring = new THREE.Mesh(tubeGeo, MAT.spring);
+        grp.add(spring);
+
+        return grp;
+      }
+
+      // ============================================================
+      // ШИНА + ДИСК (как на фото — белый 10-спицевый диск, дорожный протектор)
+      // ============================================================
+      function buildWheel() {
+        const grp = new THREE.Group();
+        const tireGeo = new THREE.TorusGeometry((P.wheel.d - P.wheel.w*0.55)/2, P.wheel.w*0.55/2, 18, 56);
+        const tire = new THREE.Mesh(tireGeo, MAT.tire);
+        tire.rotation.y = Math.PI / 2;
+        grp.add(tire);
+
+        // Боковины шины (для замыкания формы)
+        const sidewall = new THREE.Mesh(
+          new THREE.CylinderGeometry(P.wheel.d/2 - 1.5, P.wheel.d/2 - 1.5, P.wheel.w, 48, 1, true),
+          MAT.tire
+        );
+        sidewall.rotation.z = Math.PI/2;
+        grp.add(sidewall);
+
+        // Диск (рим)
+        const rimOuter = new THREE.Mesh(
+          new THREE.CylinderGeometry(P.wheel.rim/2, P.wheel.rim/2, P.wheel.w - 4, 32, 1, true),
+          MAT.rim
+        );
+        rimOuter.rotation.z = Math.PI/2;
+        grp.add(rimOuter);
+
+        // Лицевая пластина диска со спицами
+        const faceGroup = (sign) => {
+          const f = new THREE.Group();
+          const plate = new THREE.Mesh(new THREE.CylinderGeometry(P.wheel.rim/2, P.wheel.rim/2, 0.8, 32), MAT.rim);
+          plate.rotation.z = Math.PI/2;
+          plate.position.x = sign * (P.wheel.w/2 - 0.4);
+          f.add(plate);
+
+          const spokes = 10;
+          for (let i = 0; i < spokes; i++) {
+            const a = (i / spokes) * Math.PI * 2;
+            const s = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.4, P.wheel.rim - 6), MAT.rim);
+            s.position.x = sign * (P.wheel.w/2 - 0.6);
+            s.position.y = Math.cos(a) * (P.wheel.rim/4);
+            s.position.z = Math.sin(a) * (P.wheel.rim/4);
+            s.rotation.x = a;
+            f.add(s);
+          }
+          // Hex hub в центре
+          const hub = new THREE.Mesh(
+            new THREE.CylinderGeometry(4.4, 4.4, 2, 6),
+            MAT.aluBlue
+          );
+          hub.rotation.z = Math.PI/2;
+          hub.position.x = sign * (P.wheel.w/2 + 0.6);
+          f.add(hub);
+          return f;
+        };
+        grp.add(faceGroup(1));
+        grp.add(faceGroup(-1));
+
+        // Протектор (мелкие канавки на торе)
+        const treadCount = 48;
+        for (let i = 0; i < treadCount; i++) {
+          const a = (i / treadCount) * Math.PI * 2;
+          const t = new THREE.Mesh(
+            new THREE.BoxGeometry(P.wheel.w * 0.85, 0.4, 1.6),
+            MAT.tire
+          );
+          t.rotation.x = a;
+          t.position.y = Math.cos(a) * (P.wheel.d/2 - 0.6);
+          t.position.z = Math.sin(a) * (P.wheel.d/2 - 0.6);
+          grp.add(t);
+        }
+        return grp;
+      }
+
+      // ============================================================
+      // ПОДВЕСКА: рычаги, кулаки, шок-башни
+      // ============================================================
+      function buildArm(length = 28, width = 8, side = 1) {
+        const grp = new THREE.Group();
+        const arm = new THREE.Mesh(
+          new THREE.BoxGeometry(length, 3, width),
+          MAT.chassisBlack
+        );
+        arm.position.x = side * (length / 2);
+        grp.add(arm);
+        // Внешний шарнир (бочка)
+        const pivot = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 6, 12), MAT.aluBlue);
+        pivot.rotation.z = Math.PI/2;
+        pivot.position.x = side * length;
+        grp.add(pivot);
+        return grp;
+      }
+
+      function buildHub(side = 1) {
+        const grp = new THREE.Group();
+        const block = new THREE.Mesh(
+          new THREE.BoxGeometry(8, 16, 10),
+          MAT.aluBlue
+        );
+        grp.add(block);
+        // Шкворень / стойка кастора
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 18, 12), MAT.steel);
+        post.position.y = 4;
+        grp.add(post);
+        // Hex шпиндель к колесу
+        const spindle = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 12, 6), MAT.aluBlue);
+        spindle.rotation.z = Math.PI/2;
+        spindle.position.x = side * 8;
+        grp.add(spindle);
+        return grp;
+      }
+
+      function buildShockTower(z) {
+        const grp = new THREE.Group();
+        const tower = new THREE.Mesh(
+          new THREE.BoxGeometry(96, 22, 2.2),
+          MAT.chassisBlack
+        );
+        tower.position.set(0, 16, z);
+        grp.add(tower);
+        // Боковые «крылышки» (под антенну/держатели кузова)
+        for (const sx of [-1, 1]) {
+          const wing = new THREE.Mesh(new THREE.BoxGeometry(8, 28, 2.2), MAT.chassisBlack);
+          wing.position.set(sx * 32, 19, z + 0.5);
+          grp.add(wing);
+        }
+        return grp;
+      }
+
+      // ============================================================
+      // ТРАНСМИССИЯ: дифференциалы, мотор, кардан
+      // ============================================================
+      function buildDiff(z) {
+        const grp = new THREE.Group();
+        const housing = new THREE.Mesh(
+          new THREE.CylinderGeometry(11, 11, 22, 24),
+          MAT.aluDark
+        );
+        housing.rotation.z = Math.PI / 2;
+        grp.add(housing);
+        const cap = new THREE.Mesh(
+          new THREE.CylinderGeometry(11.5, 11.5, 2, 24),
+          MAT.aluBlue
+        );
+        cap.rotation.z = Math.PI / 2;
+        cap.position.x = 11;
+        grp.add(cap);
+        const cap2 = cap.clone(); cap2.position.x = -11; grp.add(cap2);
+        // CV-валы (две оси)
+        for (const sx of [-1, 1]) {
+          const cv = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 36, 12), MAT.steel);
+          cv.rotation.z = Math.PI / 2;
+          cv.position.set(sx * 30, 0, 0);
+          grp.add(cv);
+        }
+        grp.position.y = 7;
+        grp.position.z = z;
+        return grp;
+      }
+
+      function buildMotor() {
+        const grp = new THREE.Group();
+        const can = new THREE.Mesh(new THREE.CylinderGeometry(13, 13, 30, 28), MAT.steel);
+        can.rotation.x = Math.PI / 2;
+        grp.add(can);
+        const endbell = new THREE.Mesh(new THREE.CylinderGeometry(13.2, 13.2, 4, 28), MAT.aluBlue);
+        endbell.rotation.x = Math.PI / 2;
+        endbell.position.z = -16;
+        grp.add(endbell);
+        const pinion = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 5, 18), MAT.gold);
+        pinion.rotation.x = Math.PI / 2;
+        pinion.position.z = 17.5;
+        grp.add(pinion);
+        return grp;
+      }
+
+      function buildDriveshaft() {
+        const grp = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 130, 12), MAT.steel);
+        shaft.rotation.x = Math.PI / 2;
+        grp.add(shaft);
+        return grp;
+      }
+
+      // ============================================================
+      // АККУМУЛЯТОР И ЭЛЕКТРИКА
+      // ============================================================
+      function buildBattery() {
+        const grp = new THREE.Group();
+        const pack = new THREE.Mesh(
+          new THREE.BoxGeometry(P.battery.L, P.battery.H, P.battery.W),
+          MAT.battery
+        );
+        grp.add(pack);
+        // Этикетка-полоска (имитирует наклейку с предупреждением)
+        const label = new THREE.Mesh(
+          new THREE.BoxGeometry(P.battery.L * 0.85, 0.2, P.battery.W * 0.55),
+          MAT.batteryLabel
+        );
+        label.position.y = P.battery.H/2 + 0.05;
+        grp.add(label);
+        // Провода
+        for (const sx of [-1, 1]) {
+          const wire = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 28, 10), MAT.wire);
+          wire.position.set(sx * (P.battery.L/2 - 6), 0, P.battery.W/2 + 14);
+          wire.rotation.x = Math.PI / 2;
+          grp.add(wire);
+        }
+        return grp;
+      }
+
+      function buildESC() {
+        const grp = new THREE.Group();
+        const box = new THREE.Mesh(new THREE.BoxGeometry(28, 14, 22), MAT.plastic);
+        grp.add(box);
+        const sticker = new THREE.Mesh(new THREE.BoxGeometry(22, 0.2, 16), MAT.batteryLabel);
+        sticker.position.y = 7.1;
+        grp.add(sticker);
+        return grp;
+      }
+
+      function buildServo() {
+        const grp = new THREE.Group();
+        const box = new THREE.Mesh(new THREE.BoxGeometry(22, 22, 12), MAT.plastic);
+        grp.add(box);
+        const horn = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 3, 16), MAT.batteryLabel);
+        horn.position.y = 12.5;
+        grp.add(horn);
+        return grp;
+      }
+
+      // ============================================================
+      // БАМПЕР И КУЗОВНЫЕ СТОЙКИ
+      // ============================================================
+      function buildFoamBumper() {
+        const grp = new THREE.Group();
+        // Дугообразная пенопластовая «накладка» — как на фото
+        const shape = new THREE.Shape();
+        const w = P.bumper.foamW / 2, t = P.bumper.foamT;
+        shape.moveTo(-w, 0);
+        shape.quadraticCurveTo(0, -t * 0.65, w, 0);
+        shape.lineTo(w * 0.75, 0);
+        shape.quadraticCurveTo(0, -t * 0.32, -w * 0.75, 0);
+        shape.lineTo(-w, 0);
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: P.bumper.foamH, bevelEnabled: true, bevelSize: 1.2, bevelThickness: 1.2, bevelSegments: 2 });
+        const foam = new THREE.Mesh(geo, MAT.rubberDamper);
+        foam.rotation.x = -Math.PI/2;
+        foam.position.y = -3;
+        grp.add(foam);
+
+        // Пластиковый держатель сверху
+        const holder = new THREE.Mesh(new THREE.BoxGeometry(P.bumper.foamW * 0.85, 4, 10), MAT.chassisBlack);
+        holder.position.set(0, 3, P.bumper.foamH * 0.5);
+        grp.add(holder);
+        return grp;
+      }
+
+      function buildBodyPost(h = 56) {
+        const grp = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, h, 14), MAT.chassisBlack);
+        shaft.position.y = h/2;
+        grp.add(shaft);
+        // R-clip (клипса) сверху
+        const clip = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.5, 6, 16, Math.PI*1.4), MAT.steel);
+        clip.position.y = h - 4; clip.rotation.y = Math.PI/2;
+        grp.add(clip);
+        return grp;
+      }
+
+      function buildAntennaMount() {
+        const grp = new THREE.Group();
+        const base = new THREE.Mesh(new THREE.BoxGeometry(8, 4, 8), MAT.chassisBlack);
+        grp.add(base);
+        const tube = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 70, 10), MAT.chassisBlack);
+        tube.position.y = 35; grp.add(tube);
+        return grp;
+      }
+
+      function buildSteeringLink() {
+        const grp = new THREE.Group();
+        const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, P.track - 12, 10), MAT.steel);
+        rod.rotation.z = Math.PI/2;
+        grp.add(rod);
+        for (const sx of [-1, 1]) {
+          const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 14, 10), MAT.aluBlue);
+          ball.position.x = sx * (P.track/2 - 6);
+          grp.add(ball);
+        }
+        return grp;
+      }
+
+      // ============================================================
+      // СБОРКА ВСЕЙ МОДЕЛИ
+      // ============================================================
+      function assemble() {
+        // ------- Шасси -------
+        const plate = buildChassisPlate();
+        plate.position.y = 8;
+        G.chassis.add(plate);
+        G.chassis.add(buildSideRail(1));
+        G.chassis.add(buildSideRail(-1));
+        const upper = buildUpperDeck();
+        upper.position.y = 22;
+        G.chassis.add(upper);
+
+        // ------- Шок-башни (перед/зад) -------
+        G.chassis.add(buildShockTower(+P.wheelbase/2 - 8));
+        G.chassis.add(buildShockTower(-P.wheelbase/2 + 8));
+
+        // ------- Подвеска -------
+        const armPositions = [
+          { z: +P.wheelbase/2, side: +1 }, { z: +P.wheelbase/2, side: -1 },
+          { z: -P.wheelbase/2, side: +1 }, { z: -P.wheelbase/2, side: -1 }
+        ];
+        for (const { z, side } of armPositions) {
+          // нижний рычаг
+          const arm = buildArm(P.track/2 - 10, 12, side);
+          arm.position.set(0, 9, z);
+          G.suspension.add(arm);
+          // верхний рычаг (короче)
+          const armUpper = buildArm(P.track/2 - 22, 5, side);
+          armUpper.position.set(0, 28, z);
+          G.suspension.add(armUpper);
+          // кулак
+          const hub = buildHub(side);
+          hub.position.set(side * (P.track/2 - 6), 17, z);
+          G.suspension.add(hub);
+          // амортизатор (с наклоном)
+          const shock = buildShock();
+          shock.position.set(side * (P.track/2 - 26), 26, z);
+          shock.rotation.z = side * -0.18;
+          G.suspension.add(shock);
+        }
+
+        // ------- Рулевые тяги (только спереди) -------
+        const steer = buildSteeringLink();
+        steer.position.set(0, 17, P.wheelbase/2 + 6);
+        G.suspension.add(steer);
+
+        // ------- Колёса -------
+        for (const { z, side } of armPositions) {
+          const wheel = buildWheel();
+          wheel.position.set(side * P.track/2, P.wheel.d/2, z);
+          G.wheels.add(wheel);
+        }
+
+        // ------- Трансмиссия -------
+        const diffFront = buildDiff(+P.wheelbase/2);
+        const diffRear  = buildDiff(-P.wheelbase/2);
+        G.drivetrain.add(diffFront);
+        G.drivetrain.add(diffRear);
+        const driveshaft = buildDriveshaft();
+        driveshaft.position.set(0, 7, 0);
+        G.drivetrain.add(driveshaft);
+        const motor = buildMotor();
+        motor.position.set(-18, 18, -38);
+        G.drivetrain.add(motor);
+
+        // ------- Электрика -------
+        const bat = buildBattery();
+        bat.position.set(8, 18 + P.battery.H/2, 0);
+        G.electronics.add(bat);
+        const esc = buildESC();
+        esc.position.set(28, 22, -38);
+        G.electronics.add(esc);
+        const servo = buildServo();
+        servo.position.set(-12, 24, 60);
+        G.electronics.add(servo);
+
+        // ------- Бамперы -------
+        const fb = buildFoamBumper();
+        fb.position.set(0, 12, P.chassis.L/2 + 6);
+        fb.rotation.y = Math.PI;
+        G.body.add(fb);
+        const rb = buildFoamBumper();
+        rb.position.set(0, 12, -P.chassis.L/2 - 6);
+        G.body.add(rb);
+
+        // ------- Кузовные стойки -------
+        for (const sx of [-1, +1]) {
+          for (const sz of [-1, +1]) {
+            const post = buildBodyPost(56);
+            post.position.set(sx * 38, 14, sz * (P.wheelbase/2 - 12));
+            G.body.add(post);
+          }
+        }
+
+        // ------- Антенна -------
+        const ant = buildAntennaMount();
+        ant.position.set(34, 24, -22);
+        G.body.add(ant);
+      }
+
+      assemble();
+
+      // ============================================================
+      // СЦЕНА
+      // ============================================================
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0e0f12);
+      scene.fog = new THREE.Fog(0x0e0f12, 600, 1400);
+
+      const root = new THREE.Group();
+      Object.values(G).forEach(g => root.add(g));
+      // По умолчанию машина «лежит» так, что ось Z = вперёд. Но в Three.js
+      // привычно смотреть с +Z. Развернём чтобы перед был на +X.
+      root.rotation.y = Math.PI / 2;
+      scene.add(root);
+
+      // Земля-сетка
+      const grid = new THREE.GridHelper(800, 40, 0x222633, 0x1a1d27);
+      grid.material.transparent = true; grid.material.opacity = 0.5;
+      scene.add(grid);
+
+      const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(450, 64),
+        new THREE.MeshStandardMaterial({ color: 0x111319, roughness: 1, metalness: 0 })
+      );
+      floor.rotation.x = -Math.PI/2;
+      floor.position.y = -0.05;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      // Свет
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 0.6));
+      const key = new THREE.DirectionalLight(0xffffff, 1.4);
+      key.position.set(160, 240, 200);
+      key.castShadow = true;
+      key.shadow.mapSize.set(2048, 2048);
+      key.shadow.camera.left = -240; key.shadow.camera.right = 240;
+      key.shadow.camera.top = 240; key.shadow.camera.bottom = -240;
+      key.shadow.camera.near = 1; key.shadow.camera.far = 800;
+      scene.add(key);
+      const fill = new THREE.DirectionalLight(0x6fa8dc, 0.6);
+      fill.position.set(-200, 120, -150);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0xffd9a0, 0.35);
+      rim.position.set(0, 60, -260);
+      scene.add(rim);
+
+      // Тени для всех мешей
+      root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+      // Камера + рендерер
+      const canvas = document.getElementById('canvas');
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+
+      const camera = new THREE.PerspectiveCamera(36, 1, 1, 4000);
+      camera.position.set(360, 220, 360);
+
+      const controls = new OrbitControls(camera, canvas);
+      controls.target.set(0, 30, 0);
+      controls.enableDamping = true;
+      controls.maxDistance = 1500;
+      controls.minDistance = 80;
+
+      function resize() {
+        const wrap = document.getElementById('canvasWrap');
+        const w = wrap.clientWidth, h = wrap.clientHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      function loop() {
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+      loop();
+
+      // ============================================================
+      // UI: переключение слоёв, виды, экспорт
+      // ============================================================
+      const layerMap = {
+        't-chassis': G.chassis, 't-suspension': G.suspension,
+        't-wheels': G.wheels,   't-drivetrain': G.drivetrain,
+        't-electronics': G.electronics, 't-body': G.body
+      };
+      Object.entries(layerMap).forEach(([id, group]) => {
+        const cb = document.getElementById(id);
+        cb.addEventListener('change', () => { group.visible = cb.checked; });
+      });
+
+      document.querySelectorAll('[data-view]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.view;
+          const tg = controls.target;
+          if (v === 'iso')   camera.position.set(360, 220, 360);
+          if (v === 'top')   camera.position.set(0, 600, 0.1);
+          if (v === 'side')  camera.position.set(560, 60, 0);
+          if (v === 'front') camera.position.set(0, 80, 560);
+          camera.lookAt(tg);
+        });
+      });
+
+      function download(name, blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }
+
+      document.getElementById('exportGLB').addEventListener('click', () => {
+        const exporter = new GLTFExporter();
+        exporter.parse(root, (result) => {
+          const blob = new Blob([result], { type: 'model/gltf-binary' });
+          download('HSP94182_chassis.glb', blob);
+        }, (err) => alert('GLB error: ' + err), { binary: true });
+      });
+
+      document.getElementById('exportSTL').addEventListener('click', () => {
+        const stl = new STLExporter().parse(root, { binary: true });
+        const blob = new Blob([stl], { type: 'application/octet-stream' });
+        download('HSP94182_chassis.stl', blob);
+      });
+
+      document.getElementById('exportPNG').addEventListener('click', () => {
+        renderer.render(scene, camera);
+        canvas.toBlob(b => download('HSP94182_render.png', b), 'image/png');
+      });
+    </script>
+  </body>
+</html>

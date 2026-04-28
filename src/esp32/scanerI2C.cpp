@@ -15,6 +15,10 @@
  *   Канал [4]: 0x29 — VL53L1X (ToF бок)   [если подключен]
  */
 
+#include "wro_build_target.h"
+
+#if WRO_ACTIVE_TARGET == WRO_TARGET_SCAN_I2C
+
 #include <Wire.h>
 
 #define TCA_ADDRESS 0x70
@@ -190,3 +194,5 @@ void loop() {
   // Ничего не делаем — однократный скан
   delay(1000);
 }
+
+#endif // WRO_ACTIVE_TARGET == WRO_TARGET_SCAN_I2C

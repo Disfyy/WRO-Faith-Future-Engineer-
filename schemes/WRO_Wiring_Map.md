@@ -3,7 +3,7 @@
 ## ESP32 Pin Mapping
 - GPIO21 -> I2C SDA
 - GPIO22 -> I2C SCL
-- GPIO18 -> Steering Servo PWM
+- GPIO27 -> Steering Servo PWM
 - GPIO19 -> BTS7960 R_EN
 - GPIO23 -> BTS7960 L_EN
 - GPIO5  -> BTS7960 R_PWM

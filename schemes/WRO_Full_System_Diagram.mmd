@@ -1,0 +1,126 @@
+flowchart LR
+
+  %% Styles
+  classDef power fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000;
+  classDef gnd fill:#e0e0e0,stroke:#37474f,stroke-width:2px,color:#000;
+  classDef signal fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000;
+  classDef sensor fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000;
+  classDef brains fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000;
+  classDef star fill:#000000,color:#ffffff,shape:circle,stroke-width:4px,stroke:#ffeb3b;
+
+  %% Title
+  subgraph PWR [1. Power Supply]
+    direction TB
+    BATT[🔋 LiPo 7.4V]:::power
+    SW[🔌 KCD3 Switch]:::power
+    LM5[⚡ LM2596 #1 / 5.0V]:::power
+    LM33[⚡ LM2596 #2 / 3.3V]:::power
+    
+    STAR_PWR(((STAR GND))):::star
+    
+    BATT -- "🔴 +7.4V" --> SW
+    BATT -- "🔵 GND (-)" --> STAR_PWR
+    SW -- "🔴 +7.4V" --> LM5
+    SW -- "🔴 +7.4V" --> LM33
+    STAR_PWR -- "🔵 GND (-)" --> LM5
+    STAR_PWR -- "🔵 GND (-)" --> LM33
+
+    C470[470uF Cap]:::gnd
+    C104_5[0.1uF 5V]:::gnd
+    C104_33[0.1uF 3.3V]:::gnd
+    
+    LM5 -. "Filter" .- C470
+    LM5 -. "Filter" .- C104_5
+    LM33 -. "Filter" .- C104_33
+  end
+
+  subgraph BRAIN [2. Controllers]
+    direction TB
+    ESP[🧠 ESP32 DevKitC]:::brains
+    OMV[👁️ OpenMV H7]:::brains
+    ESTOP[🛑 E-STOP]:::signal
+    LED[💡 Status LED]:::signal
+    
+    STAR_BRAIN(((STAR GND))):::star
+    
+    LM5 -- "🔴 5V -> VIN" --> ESP
+    STAR_BRAIN -- "🔵 GND" --> ESP
+    
+    LM5 -- "🔴 5V -> VIN" --> OMV
+    STAR_BRAIN -- "🔵 GND" --> OMV
+
+    ESP -- "🟢 RX <- TX" --> OMV
+    ESP -- "🟢 TX -> RX" --> OMV
+    
+    ESP -- "🟢 GPIO32" --> ESTOP
+    STAR_BRAIN -- "🔵 GND" --> ESTOP
+    
+    ESP -- "🟢 GPIO2 (Anode)" --> LED
+    STAR_BRAIN -- "🔵 Cathode" --> LED
+  end
+
+  subgraph DRIVE [3. Motor & Servo]
+    direction TB
+    BTS[⚙️ BTS7960 Driver]:::signal
+    MOT[🚗 Motor 380]:::power
+    SRV[🧭 JX PDI-6221MG]:::signal
+    
+    STAR_DRIVE(((STAR GND))):::star
+    
+    SW -- "🔴 +7.4V -> B+" --> BTS
+    STAR_DRIVE -- "🔵 GND -> B-" --> BTS
+    LM5 -- "🔴 +5V -> VCC" --> BTS
+    STAR_DRIVE -- "🔵 Logic GND" --> BTS
+    
+    ESP -- "🟢 GPIO19/23 (EN)" --> BTS
+    ESP -- "🟢 GPIO5/14 (PWM)" --> BTS
+    BTS -- "🔴 M+" --> MOT
+    BTS -- "🔵 M-" --> MOT
+    
+    LM5 -- "🔴 +5V (Red)" --> SRV
+    STAR_DRIVE -- "🔵 GND (Brown)" --> SRV
+    ESP -- "🟢 GPIO18 (Orange)" --> SRV
+    
+    CM[3x 0.1uF Motor Filter]:::gnd
+    MOT -. "Noise Filter" .- CM
+  end
+
+  subgraph I2CBUS [4. I2C Sensors]
+    direction TB
+    TCA[🔀 TCA9548A]:::sensor
+    IMU[🧭 ICM-20948 0x69]:::sensor
+    ASL[🔄 AS5600 L 0x36]:::sensor
+    ASR[🔄 AS5600 R 0x36]:::sensor
+    TOF[📏 VL53L1X x2 0x29]:::sensor
+    PULLUP[Resistors 4.7k]:::gnd
+    
+    STAR_I2C(((STAR GND))):::star
+    
+    LM33 -- "🔴 3.3V" --> PULLUP
+    ESP -- "🟢 GPIO21 (SDA), GPIO22 (SCL)" --> PULLUP
+    PULLUP -- "🟢 SDA, SCL" --> TCA
+
+    LM33 -- "🔴 3.3V -> VIN" --> TCA
+    STAR_I2C -- "🔵 GND, A0..A2" --> TCA
+    
+    TCA -- "🟢 CH0" --> IMU
+    LM33 -- "🔴 3.3V -> VCC/AD0" --> IMU
+    STAR_I2C -- "🔵 GND" --> IMU
+    
+    TCA -- "🟢 CH1" --> ASL
+    LM33 -- "🔴 3.3V -> VCC" --> ASL
+    STAR_I2C -- "🔵 GND, DIR" --> ASL
+    
+    TCA -- "🟢 CH2" --> ASR
+    LM33 -- "🔴 3.3V -> VCC" --> ASR
+    STAR_I2C -- "🔵 GND, DIR" --> ASR
+    
+    TCA -- "🟢 CH3/CH4" --> TOF
+    LM33 -- "🔴 3.3V -> VIN" --> TOF
+    STAR_I2C -- "🔵 GND" --> TOF
+  end
+
+  %% Connect the Star Grounds strictly for reference, thick lines
+  STAR_PWR ===|⚠️ ALL STAR GROUNDS CONNECT TO ONE PHYSICAL POINT ⚠️| STAR_BRAIN
+  STAR_BRAIN === STAR_DRIVE
+  STAR_DRIVE === STAR_I2C
