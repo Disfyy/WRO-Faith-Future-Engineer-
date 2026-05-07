@@ -55,8 +55,10 @@ According to WRO engineering requirements, the repository is structured as follo
 
 1. Assemble and wire the chassis according to the map in `schemes/WRO_Wiring_Map.md`.
 2. Connect OpenMV to the IDE, run Threshold Editor to configure your field lighting, and save `openmv_main.py` directly to the camera flash as `main.py`.
-3. In Arduino IDE, install `Adafruit ICM20948` and `ESP32Servo`. Compile and flash `src/esp32/eps323.cpp` into your ESP32.
-4. Set the physical switch to `OPEN CHALLENGE` or `OBSTACLE CHALLENGE`, place on the track, and release the E-STOP.
+3. In Arduino IDE, install `Adafruit ICM20948` and `ESP32Servo`. Open the `src/esp32/` folder as a sketch, set `WRO_ACTIVE_TARGET` in `wro_build_target.h` to `WRO_TARGET_V12_MAIN` (target 11) and flash. Entry point is `src/esp32/wro_v12_main.cpp`.
+4. Select challenge mode at compile time: `OBSTACLE_MODE 0` (Open) or `1` (Obstacle) in `src/esp32/wro_config_v12.h` (Rule 9.9: no physical mode switches). Place on the track, press the E-Stop button to start.
+
+> ⚠️ The hardware architecture has migrated to **v12** (ESP32-S3 + AS5048A SPI encoders + TFMini-S UART distance sensors, no I2C mux). See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/WRO_Migration_v11_to_v12.md`](docs/WRO_Migration_v11_to_v12.md). The hardware list above describes the legacy v11 build for reference only. v11 source files are kept in the tree as `legacy_*.cpp`.
 
 ---
 
