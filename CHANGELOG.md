@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## v12.1 — Legacy file rename (May 2026)
+
+### Renamed
+- `eps323.cpp`              → `legacy_eps323.cpp` (old v11 main firmware)
+- `test_motor_servo_drive.cpp` → `legacy_test_motor_servo_drive.cpp`
+- `test_no_sensors.cpp`     → `legacy_test_no_sensors.cpp`
+- `test_servo.cpp`          → `legacy_test_servo.cpp`
+- `test_servo_calibrate.cpp` → `legacy_test_servo_calibrate.cpp` (needs v12 port)
+- `test_short_sequence.cpp` → `legacy_test_short_sequence.cpp`
+- `scanerI2C.cpp`           → `scan_i2c_v12.cpp` (typo fix; already v12)
+
+Build-target macros are unchanged; only filenames moved. The active build
+(`WRO_TARGET_V12_MAIN`, target 11) is unaffected.
+
 ## v12.0 — Hardware Upgrade (May 2026)
 
 ### Breaking changes
