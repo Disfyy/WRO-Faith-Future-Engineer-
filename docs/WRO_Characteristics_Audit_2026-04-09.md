@@ -1,11 +1,13 @@
 # WRO Characteristics Audit
 
-Date: 9 April 2026
+Date: 9 April 2026 — **v11 historical audit, line numbers stale; v12 re-audit pending**
 Scope: Compare documented template values with active firmware/runtime values
 
-Compared sources:
+> ⚠️ **v12 update (May 2026):** This audit was performed against `src/esp32/eps323.cpp` (now `legacy_eps323.cpp`) and the line numbers below no longer point at active code. The new active firmware is `src/esp32/wro_v12_main.cpp` plus modular `wro_*.{cpp,h}` files. Tunables now live in `src/esp32/wro_config_v12.h` (gains, thresholds, mode flag) and `src/esp32/wro_hw_config_v12.h` (pin map, encoder constants). A re-audit against these files is needed.
+
+Compared sources (v11 historical):
 - `docs/WRO_Config_Template.h`
-- `src/esp32/eps323.cpp`
+- `src/esp32/legacy_eps323.cpp` (was `src/esp32/eps323.cpp`)
 - `src/openmv/openmv_main.py`
 
 ---

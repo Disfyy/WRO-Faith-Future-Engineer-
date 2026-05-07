@@ -1,7 +1,17 @@
 # WRO Rule Compliance Matrix
 
-Date: 9 April 2026
+Date: 9 April 2026 (v11-era audit) — **needs re-audit for v12**
 Scope: Official WRO 2026 rules + internal project safety rules
+
+> ⚠️ **v12 update (May 2026):** All `src/esp32/eps323.cpp:NNN` line references in this matrix are **stale** — `eps323.cpp` is now `legacy_eps323.cpp` (v11 reference, inactive). The active firmware is `src/esp32/wro_v12_main.cpp` and its modules `wro_*.{cpp,h}`. The mapping below should be regenerated against the v12 source. Until then, treat status entries as historical.
+>
+> Rule compliance points that map to v12 modules:
+> - **Rule 9.9** (compile-time mode): `src/esp32/wro_config_v12.h` — `#define OBSTACLE_MODE 0/1`
+> - **Rule 9.10/9.11** (single start button): `src/esp32/wro_estop.cpp` — press+release start
+> - **Rule 9.24.2** (Open finish): `src/esp32/wro_race_fsm.cpp` — `RS_FINISH` after `lap_count >= TARGET_LAPS_RACE`
+> - **Rule 9.24.4** (Obstacle finish): `src/esp32/wro_park.cpp` — `PK_FINAL` → `RS_FINISH`
+> - **Rule 11.10** (no wireless during runs): `src/esp32/wro_v12_main.cpp` — `WiFi.mode(WIFI_OFF); btStop();` in `setup()`
+> - **Internal E-Stop safety**: `src/esp32/wro_estop.cpp` + `src/esp32/wro_race_fsm.cpp` (RS_SAFE_STOP path)
 
 Official source:
 - `WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`

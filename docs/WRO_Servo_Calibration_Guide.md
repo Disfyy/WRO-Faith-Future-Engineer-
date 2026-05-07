@@ -1,10 +1,13 @@
 # WRO Servo Calibration Guide
 
-**Servo:** JX PDI-6221MG  
-**MCU:** ESP32 DevKitC V4  
-**Pin:** GPIO 27  
-**Firmware:** `src/esp32/test_servo_calibrate.cpp`  
-**Build target:** `WRO_TARGET_TEST_SERVO_CAL` (7)
+**Servo:** JX PDI-6221MG
+**MCU:** ESP32-S3-DevKitC-1 N8R8 (v12 hardware — was ESP32 DevKitC V4 on v11)
+**Pin:** GPIO 42 (v12) — was GPIO 27 (v11)
+**Firmware:** `src/esp32/legacy_test_servo_calibrate.cpp` ⚠️ **needs v12 port** — currently hardcodes GPIO 27. Two options for v12:
+  - **(a)** Edit the file to `#include "wro_hw_config_v12.h"` and remove the local `constexpr int SERVO_PIN = 27;`, then run target 7.
+  - **(b)** Run target 10 (`bench_test_v12.cpp`) which already drives the servo on GPIO 42; transcribe the µs values manually from the serial output.
+
+**Build target:** `WRO_TARGET_TEST_SERVO_CAL` (7) — pending v12 port
 
 ---
 
@@ -124,7 +127,7 @@ Type **`p`**. You'll see output like:
 ║  Range right: +455 µs from centre
 ║  Range left:  -445 µs from centre
 ╠══════════════════════════════════════╣
-║  Copy these into eps323.cpp:
+║  Copy these into wro_hw_config_v12.h (v12) or legacy_eps323.cpp (v11 reference):
 ║
 ║  #define SERVO_CENTER_US   1485
 ║  #define SERVO_RIGHT_US    1940
@@ -141,7 +144,7 @@ Type **`p`**. You'll see output like:
 
 ## Applying calibration to the main firmware
 
-After calibration, update `src/esp32/eps323.cpp` section 5 (SERVO AND
+After calibration on v12, update the µs constants in `src/esp32/wro_hw_config_v12.h` (`SERVO_CENTER_US`, `SERVO_LEFT_US`, `SERVO_RIGHT_US`). For v11 reference, update `src/esp32/legacy_eps323.cpp` section 5 (SERVO AND
 SPEEDS) with microsecond constants and switch `setSteering()` from
 `write()` to `writeMicroseconds()`.
 
@@ -159,7 +162,7 @@ SPEEDS) with microsecond constants and switch `setSteering()` from
 **With microsecond constants from your calibration:**
 
 ```cpp
-// NEW — calibrated in µs (run test_servo_calibrate.cpp to find these)
+// NEW — calibrated in µs (run target 7 once ported to v12, or read from target 10 bench output)
 #define SERVO_CENTER_US    1485   // ← your measured value
 #define SERVO_RIGHT_US     1940   // ← your measured value
 #define SERVO_LEFT_US      1040   // ← your measured value
