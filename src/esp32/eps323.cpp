@@ -9,11 +9,11 @@
  * Hardware: ESP32 DevKitC V4, BTS7960 43A (brushed DC 380),
  *           JX PDI-6221MG servo, ICM-20948 IMU,
  *           2x AS5600 encoders (две независимые I2C шины),
- *           2x VL53L1X ToF (front + side), OpenMV H7 Plus (UART2).
+ *           OpenMV H7 Plus (UART2).
  *
  * I2C ARCHITECTURE (v11.1 — без PCA9548A):
- *   Bus 1 (Wire,  GPIO21/22): IMU 0x68, AS5600 left 0x36, VL53L1X front 0x29
- *   Bus 2 (Wire1, GPIO25/26): AS5600 right 0x36, VL53L1X side 0x29
+ *   Bus 1 (Wire,  GPIO21/22): IMU 0x68, AS5600 left 0x36
+ *   Bus 2 (Wire1, GPIO25/26): AS5600 right 0x36
  *
  * IMPLEMENTED FEATURES (v11.0):
  *  1.  Camera UART protocol v3 with XOR checksum validation:
@@ -27,7 +27,7 @@
  *        integral reset on pillar-color switch. S-curve pre-positioning
  *        from the FAR pillar when BOTH are visible.
  *  6.  Gyroscope heading hold when no landmarks are visible.
- *  7.  Front VL53L1X proportional braking, side VL53L1X wall-align.
+ *  7.  (ToF отключён — нет VL53 в прошивке.)
  *  8.  Parallel parking FSM (APPROACH → ALIGN → CREEP (reverse) → FINAL).
  *  9.  Odometry: AS5600 4096 ticks/rev, D=47mm → 277 ticks/cm,
  *        with wrap-around handling and 50-error safe-stop guard.
@@ -43,8 +43,7 @@
  *    (was only WALL_BIT).
  *  - S-curve for simultaneous pillars now adds a lateral offset from the
  *    FAR pillar so the robot starts to pre-position early.
- *  - Parking ALIGN phase now uses side VL53L1X distance delta correctly
- *    and only advances to CREEP when |delta| < TOF_PARALLEL_TOL_MM.
+ *  - Parking ALIGN: выравнивание только по гироскопу (без ToF).
  *  - Parking CREEP now reverses (negative speed) per competition technique.
  *  - Servo pin fixed to GPIO27 (matches WRO_Wiring_Map.md).
  *  - lineConfirmCount is explicitly reset while the cooldown window is
@@ -68,9 +67,9 @@
 // ============================================================
 // 3.  PINS  (do not change — hardware-defined)
 // ============================================================
-#define I2C_SDA      21    // Bus 1 (Wire)  — левый AS5600 + IMU + VL53L1X фронт
+#define I2C_SDA      21    // Bus 1 (Wire)  — левый AS5600 + IMU
 #define I2C_SCL      22
-#define I2C_SDA2     25    // Bus 2 (Wire1) — правый AS5600 + VL53L1X бок
+#define I2C_SDA2     25    // Bus 2 (Wire1) — правый AS5600
 #define I2C_SCL2     26
 #define SERVO_PIN    27    // Steering servo PWM (per WRO_Wiring_Map.md)
 #define MOTOR_R_EN   19    // BTS7960 right-enable
@@ -87,7 +86,7 @@
 // ============================================================
 // Uncomment for OBSTACLE Challenge (laps + pillars + parking).
 // Comment  for OPEN     Challenge (laps only, no pillars/no parking).
-#define OBSTACLE_CHALLENGE_MODE
+// #define OBSTACLE_CHALLENGE_MODE   // <-- Open Challenge активен (CCW, tails-tails)
 
 // ============================================================
 // 5.  SERVO AND SPEEDS
@@ -99,16 +98,22 @@
 #define SERVO_RIGHT_US     1915  // µs — max right steering
 #define SERVO_LEFT_US      1215  // µs — max left steering
 
+// Safety margin away from the mechanical end-stops.
+// If the servo "knocks/buzzes" at the ends, increase this value (e.g. 80–120).
+#define SERVO_MARGIN_US      60
+#define SERVO_RIGHT_SAFE_US  (SERVO_RIGHT_US - SERVO_MARGIN_US)
+#define SERVO_LEFT_SAFE_US   (SERVO_LEFT_US  + SERVO_MARGIN_US)
+
 // Legacy degree aliases — used throughout updateControl() calculations.
 // These are mapped to µs inside setSteering().
 #define SERVO_CENTER      90
 #define SERVO_MAX_RIGHT   135
 #define SERVO_MAX_LEFT    45
 
-// Open Challenge speed profile (favours speed — no pillars to avoid).
-#define OPEN_MAX_SPEED    180   // PWM, 0..255
-#define OPEN_TURN_FAST    140
-#define OPEN_TURN_SLOW    95
+// Open Challenge speed profile: gentle, careful drive.
+#define OPEN_MAX_SPEED    80    // PWM, 0..255 — обычная езда
+#define OPEN_TURN_FAST    70
+#define OPEN_TURN_SLOW    55
 #define OPEN_MIN_SPEED    40    // Motor deadband compensation floor
 
 // Obstacle Challenge speed profile (favours precision — tighter avoidance).
@@ -127,35 +132,23 @@ int MOTOR_MIN_SPEED = OBS_MIN_SPEED;
 // 6.  PID COEFFICIENTS AND STATE
 // ============================================================
 // Pillar-avoidance PID (tunable over Serial: P/I/D commands).
-float PID_KP  = 0.55f;   // proportional  — main steering force
-float PID_KI  = 0.002f;  // integral      — corrects steady-state bias
-float PID_KD  = 0.18f;   // derivative    — damps overshoot (EMA-filtered)
-float GYRO_KP = 1.20f;   // heading-hold gain when no camera cue is present
+float PID_KP  = 0.35f;   // proportional  — main steering force (уменьшено)
+float PID_KI  = 0.001f;  // integral      — corrects steady-state bias (уменьшено)
+float PID_KD  = 0.25f;   // derivative    — damps overshoot (EMA-filtered) (увеличено для плавности)
+float GYRO_KP = 1.00f;   // heading-hold gain when no camera cue is present
 
 float integralError      = 0.0f;
 float filteredDerivative = 0.0f;
-#define DERIVATIVE_ALPHA  0.3f    // EMA smoothing factor for D term
-#define INTEGRAL_CLAMP    400     // Anti-windup bound for integrator
-
-// Pillar-offset curve (robot–pillar lateral separation depends on distance).
-// Units: "camera X pixels / arbitrary units used in the protocol".
-// Red : desired X = +OFFSET (pillar must appear on our RIGHT)
-// Green: desired X = -OFFSET (pillar must appear on our LEFT)
-#define AVOID_OFFSET_MIN   25   // Applied when the pillar is far (light nudge)
-#define AVOID_OFFSET_MAX   65   // Applied when the pillar is near (hard nudge)
-#define AVOID_RANGE_FAR    80   // cm — distance at which avoidance activates
-#define AVOID_RANGE_NEAR   20   // cm — distance at which OFFSET_MAX applies
 
 // ============================================================
 // 7.  I2C — две независимые шины (без PCA9548A)
 // ============================================================
-//   Шина 1 (Wire,  GPIO21/22): IMU + AS5600 левый + VL53L1X фронт
-//   Шина 2 (Wire1, GPIO25/26): AS5600 правый + VL53L1X бок
+//   Шина 1 (Wire,  GPIO21/22): IMU + AS5600 левый
+//   Шина 2 (Wire1, GPIO25/26): AS5600 правый
 //
 // Два AS5600 не могут жить на одной шине (общий адрес 0x36) —
 // поэтому распределяем их по разным аппаратным I2C интерфейсам ESP32.
 #define AS5600_ADDRESS    0x36
-#define VL53L1X_ADDRESS   0x29
 #define ICM20948_ADDRESS  0x68   // AD0 → GND (если AD0 → 3.3V, то 0x69)
 
 // Идентификаторы устройств — заменяют старые TCA каналы.
@@ -163,32 +156,14 @@ float filteredDerivative = 0.0f;
 #define BUS_IMU           0
 #define BUS_ENC_LEFT      1
 #define BUS_ENC_RIGHT     2
-#define BUS_TOF_FRONT     3
-#define BUS_TOF_SIDE      4
 
 // ============================================================
-// 8.  VL53L1X — conditional compilation
+// Emergency motor diagnostic. Keep 0 for normal driving.
+// Set to 1 only when testing BTS7960/motor wiring.
 // ============================================================
-// Comment this out if the VL53L1X (Pololu) library is not installed or
-// if the sensors are not yet physically wired. All ToF-dependent code
-// degrades gracefully.
-#define USE_VL53L1X
-
-#ifdef USE_VL53L1X
-#include <VL53L1X.h>
-VL53L1X tofFront;
-VL53L1X tofSide;
-bool    tofFrontOK = false;
-bool    tofSideOK  = false;
-#endif
-
-int distFrontMM = 9999;  // Front ToF latest reading (mm). 9999 = no data.
-int distSideMM  = 9999;  // Side  ToF latest reading (mm).
-
-#define TOF_EMERGENCY_MM     120  // 12 cm — hard brake / blind-turn region
-#define TOF_SLOW_DOWN_MM     300  // 30 cm — start proportional braking
-#define TOF_SIDE_TARGET_MM   100  // 10 cm — target distance to the wall during parking
-#define TOF_PARALLEL_TOL_MM  20   // 2  cm — tolerance for "aligned with wall"
+#define OPEN_FORCE_MOTOR_TEST 0
+#define OPEN_FORCE_TEST_SPEED 180
+#define OPEN_FORCE_REVERSE_MS 2500
 
 // ============================================================
 // 9.  TIMEOUTS
@@ -218,7 +193,10 @@ int distSideMM  = 9999;  // Side  ToF latest reading (mm).
 // ============================================================
 // 11.  RACE
 // ============================================================
-#define TARGET_LAPS   3
+// Auto-finish по gyro отключён (99 кругов).
+// Open  state machine: 4 сегмента → стоп.
+// Obs   state machine: 12 сегментов → стоп.
+#define TARGET_LAPS   99
 #define LAP_DEGREES   360.0f
 
 // ============================================================
@@ -250,7 +228,7 @@ enum RobotState {
 
 enum ParkPhase {
   PARK_APPROACH,     // Scan forward, looking for magenta wooden blocks
-  PARK_ALIGN,        // Halt, check side ToF wall distance, align parallel
+  PARK_ALIGN,        // Halt, align heading (gyro), then CREEP
   PARK_CREEP,        // Reverse into the 20 cm parking zone
   PARK_FINAL_STOP    // Full stop → finishRace()
 };
@@ -321,8 +299,9 @@ int  lastCameraError    = 0;
 int  lastActivePillar   = 0;         // 3 = red, 4 = green, 0 = none
 
 // ----- Track direction -----
-int   globalTrackDirection = 1;      // +1 = CW (orange first), -1 = CCW (blue first)
-bool  directionConfirmed  = false;
+// Hardcoded to CCW ("Tails") based on user request.
+int   globalTrackDirection = -1;     // +1 = CW, -1 = CCW (blue first)
+bool  directionConfirmed   = true;   // Force confirmation without waiting for line
 
 // ----- Blind turn state -----
 long           turnStartDistLeft  = 0;
@@ -359,6 +338,8 @@ void enterParking();
 void updateParking();
 void enterBlindTurn(int direction);
 bool updateBlindTurn();
+void updateOpenOval();
+void updateObstacleBlind();
 void finishRace();
 
 // ============================================================
@@ -372,9 +353,7 @@ TwoWire& busFor(uint8_t device) {
   switch (device) {
     case BUS_IMU:        return Wire;    // GPIO21/22
     case BUS_ENC_LEFT:   return Wire;    // GPIO21/22
-    case BUS_TOF_FRONT:  return Wire;    // GPIO21/22
     case BUS_ENC_RIGHT:  return Wire1;   // GPIO25/26
-    case BUS_TOF_SIDE:   return Wire1;   // GPIO25/26
     default:             return Wire;
   }
 }
@@ -392,10 +371,10 @@ void setSteering(int angle) {
   // regardless of the servo's factory offset.
   int us;
   if (angle >= SERVO_CENTER)
-    us = map(angle, SERVO_CENTER, SERVO_MAX_RIGHT, SERVO_CENTER_US, SERVO_RIGHT_US);
+    us = map(angle, SERVO_CENTER, SERVO_MAX_RIGHT, SERVO_CENTER_US, SERVO_RIGHT_SAFE_US);
   else
-    us = map(angle, SERVO_MAX_LEFT, SERVO_CENTER, SERVO_LEFT_US, SERVO_CENTER_US);
-  steeringServo.writeMicroseconds(constrain(us, SERVO_LEFT_US, SERVO_RIGHT_US));
+    us = map(angle, SERVO_MAX_LEFT, SERVO_CENTER, SERVO_LEFT_SAFE_US, SERVO_CENTER_US);
+  steeringServo.writeMicroseconds(constrain(us, SERVO_LEFT_SAFE_US, SERVO_RIGHT_SAFE_US));
 }
 
 // Map a desired speed magnitude to the actual PWM, compensating for
@@ -406,19 +385,19 @@ int applyDeadband(int speed) {
   return constrain(mapped, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
 }
 
-// Write signed PWM to BTS7960 using LEDC channels 0 (R) and 1 (L).
+// Write signed PWM to BTS7960 using pins (ESP32 V3).
 void setMotorSpeed(int speed) {
   speed = constrain(speed, -255, 255);
   int mapped = applyDeadband(speed);
   if (speed > 0) {              // forward
-    ledcWrite(1, 0);
-    ledcWrite(0, mapped);
+    ledcWrite(MOTOR_L_PWM, 0);
+    ledcWrite(MOTOR_R_PWM, mapped);
   } else if (speed < 0) {       // reverse
-    ledcWrite(0, 0);
-    ledcWrite(1, mapped);
+    ledcWrite(MOTOR_R_PWM, 0);
+    ledcWrite(MOTOR_L_PWM, mapped);
   } else {                      // coast stop
-    ledcWrite(0, 0);
-    ledcWrite(1, 0);
+    ledcWrite(MOTOR_R_PWM, 0);
+    ledcWrite(MOTOR_L_PWM, 0);
   }
 }
 
@@ -595,55 +574,6 @@ void updateYaw() {
   // ----------------------------------------------------------
 }
 
-// ============================================================
-// 22.  VL53L1X — ToF range finders (conditional)
-// ============================================================
-#ifdef USE_VL53L1X
-void initToF() {
-  // Front sensor — Bus 1 (Wire, GPIO21/22)
-  tofFront.setBus(&Wire);
-  tofFront.setTimeout(200);
-  if (tofFront.init()) {
-    tofFront.setDistanceMode(VL53L1X::Short);
-    tofFront.setMeasurementTimingBudget(33000);  // 33 ms budget → ~30 Hz
-    tofFront.startContinuous(33);
-    tofFrontOK = true;
-    Serial.println("VL53L1X FRONT: OK");
-  } else {
-    Serial.println("VL53L1X FRONT: NOT FOUND (continuing without it)");
-  }
-
-  // Side sensor — Bus 2 (Wire1, GPIO25/26)
-  tofSide.setBus(&Wire1);
-  tofSide.setTimeout(200);
-  if (tofSide.init()) {
-    tofSide.setDistanceMode(VL53L1X::Short);
-    tofSide.setMeasurementTimingBudget(33000);
-    tofSide.startContinuous(33);
-    tofSideOK = true;
-    Serial.println("VL53L1X SIDE:  OK");
-  } else {
-    Serial.println("VL53L1X SIDE:  NOT FOUND (continuing without it)");
-  }
-}
-
-void readToF() {
-  if (tofFrontOK && tofFront.dataReady()) {
-    distFrontMM = tofFront.read(false);
-    if (tofFront.timeoutOccurred()) distFrontMM = 9999;
-  }
-  if (tofSideOK && tofSide.dataReady()) {
-    distSideMM = tofSide.read(false);
-    if (tofSide.timeoutOccurred()) distSideMM = 9999;
-  }
-}
-#else
-void initToF() { Serial.println("VL53L1X: DISABLED (USE_VL53L1X not defined)"); }
-void readToF() { /* noop */ }
-#endif
-
-// ============================================================
-// 23.  LAP COUNTING (3 separate single-responsibility functions)
 // ============================================================
 
 // Accumulate signed yaw delta into totalRotation. The integer division
@@ -865,16 +795,6 @@ void updateParking() {
                                SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
     targetSpeed = PARK_APPROACH_SPEED;
 
-#ifdef USE_VL53L1X
-    // Keep a comfortable distance from the wall while scanning.
-    if (tofSideOK && distSideMM < 500) {
-      int sideErr  = distSideMM - TOF_SIDE_TARGET_MM;
-      int sideCorr = constrain(sideErr / 2, -15, 15);
-      targetSteering = constrain(targetSteering + sideCorr * globalTrackDirection,
-                                 SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-    }
-#endif
-
     if (magentaSeen) magentaSeenCount++;
     else             magentaSeenCount = max(magentaSeenCount - 1, 0);
 
@@ -894,42 +814,18 @@ void updateParking() {
     break;
   }
 
-  // ----- ALIGN: stop, verify wall distance via side ToF (FIXED) -----
+  // ----- ALIGN: стоп по гироскопу, затем CREEP -----
   case PARK_ALIGN: {
-    // Hold position; steer toward the snapped yaw so we remain parallel.
     float hErr = parkTargetYaw - yawAngle;
     while (hErr >  180) hErr -= 360;
     while (hErr < -180) hErr += 360;
     targetSteering = constrain(SERVO_CENTER + (int)(2.0f * GYRO_KP * hErr),
                                SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-
-#ifdef USE_VL53L1X
-    if (tofSideOK) {
-      int delta = distSideMM - TOF_SIDE_TARGET_MM;   // + = too far, - = too close
-      if (abs(delta) < TOF_PARALLEL_TOL_MM && fabsf(hErr) < 4.0f) {
-        // Aligned and heading matches — proceed to reverse.
-        targetSpeed    = 0;
-        parkPhase      = PARK_CREEP;
-        parkStartTicks = totalDistLeft;
-        Serial.println(">>> PARKING: CREEP (reverse into bay) <<<");
-        break;
-      }
-      // Nudge: creep forward/back slowly to adjust lateral distance.
-      // Small steering bias toward/away from the wall.
-      int sideBias = constrain(delta / 4, -20, 20);
-      targetSteering = constrain(targetSteering + sideBias * globalTrackDirection,
-                                 SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-      targetSpeed    = PARK_CREEP_SPEED / 2;   // very slow nudge
-    } else
-#endif
-    {
-      // No side ToF — rely on heading only.
-      targetSpeed = 0;
-      if (fabsf(hErr) < 2.0f) {
-        parkPhase      = PARK_CREEP;
-        parkStartTicks = totalDistLeft;
-        Serial.println(">>> PARKING: CREEP (heading aligned, no side ToF) <<<");
-      }
+    targetSpeed = 0;
+    if (fabsf(hErr) < 2.0f) {
+      parkPhase      = PARK_CREEP;
+      parkStartTicks = totalDistLeft;
+      Serial.println(">>> PARKING: CREEP (heading aligned) <<<");
     }
     break;
   }
@@ -958,17 +854,6 @@ void updateParking() {
       magnitude = PARK_CREEP_SPEED;
     }
     targetSpeed = -magnitude;                 // negative = reverse
-
-#ifdef USE_VL53L1X
-    // Fine lateral trim while reversing — keep side distance honest.
-    if (tofSideOK && distSideMM < 300) {
-      int sideErr  = distSideMM - TOF_SIDE_TARGET_MM;
-      int sideCorr = constrain(sideErr / 3, -10, 10);
-      // Invert sign because we are moving backwards.
-      targetSteering = constrain(targetSteering - sideCorr * globalTrackDirection,
-                                 SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-    }
-#endif
 
     if (distTraveled >= targetTicks) {
       parkPhase = PARK_FINAL_STOP;
@@ -1007,18 +892,44 @@ void enterBlindTurn(int direction) {
 
 // Runs once per loop while in STATE_BLIND_TURN. Returns true when exit
 // conditions are met and the FSM has transitioned back to TRACKING.
+// Snap a heading angle to the nearest 90° axis ( -180 / -90 / 0 / 90 ).
+// Used after blind turns so small under/overshoot doesn't accumulate.
+static inline float snapHeadingTo90(float yaw) {
+  float snapped = roundf(yaw / 90.0f) * 90.0f;
+  while (snapped >  180) snapped -= 360;
+  while (snapped < -180) snapped += 360;
+  return snapped;
+}
+
+// Brake-before-turn: how long to decelerate (and keep wheels straight)
+// before applying full steering lock.  Without this the car still rolls
+// 8–10 cm forward on full lock and clips the front wall on tight tracks.
+#define BLIND_TURN_BRAKE_MS  180
+
 bool updateBlindTurn() {
+  unsigned long elapsed = millis() - turnStartTime;
+
   // Emergency 3 s timeout — always bail out so we never get stuck.
-  if (millis() - turnStartTime > BLIND_TURN_TIMEOUT) {
+  if (elapsed > BLIND_TURN_TIMEOUT) {
     currentState    = STATE_TRACKING;
-    targetHeading   = yawAngle;
+    targetHeading   = snapHeadingTo90(yawAngle);
     closeWallCount  = 0;
     lastCameraError = 0;
     Serial.println(">>> BLIND TURN: timeout exit <<<");
     return true;
   }
 
-  // Command full steering in the chosen direction, slow speed.
+  // ---- Phase 1: brake straight (until the car has actually slowed down) ----
+  // Wheels straight, request zero speed. The speed-ramp will pull
+  // commandSpeed down quickly. Once the car is slow enough OR a short
+  // window has passed, fall through to the steering phase.
+  if (elapsed < BLIND_TURN_BRAKE_MS && commandSpeed > MOTOR_MIN_SPEED) {
+    targetSteering = SERVO_CENTER;
+    targetSpeed    = 0;
+    return false;
+  }
+
+  // ---- Phase 2: full lock, low forward speed ----
   targetSteering = (turnDirection == 1) ? SERVO_MAX_RIGHT : SERVO_MAX_LEFT;
   targetSpeed    = MOTOR_TURN_SLOW;
 
@@ -1033,7 +944,7 @@ bool updateBlindTurn() {
 
   if (fabsf(turned) >= BLIND_TURN_ANGLE || labs(distT) > ENCODER_TURN_TICKS) {
     currentState    = STATE_TRACKING;
-    targetHeading   = yawAngle;
+    targetHeading   = snapHeadingTo90(yawAngle);
     closeWallCount  = 0;
     lastCameraError = 0;
     Serial.println(">>> BLIND TURN: exit by yaw/odometry <<<");
@@ -1042,23 +953,288 @@ bool updateBlindTurn() {
   return false;
 }
 
-// Compute the signed "desired lateral offset" magnitude given the pillar
-// distance. Linear ramp between [AVOID_RANGE_NEAR, AVOID_RANGE_FAR].
-// Returns a POSITIVE magnitude; the caller applies the sign for red/green.
-int calcPillarOffsetMagnitude(int dist) {
-  if (dist <= 0 || dist > AVOID_RANGE_FAR) return 0;
-  if (dist <= AVOID_RANGE_NEAR) return AVOID_OFFSET_MAX;
-  return map(dist, AVOID_RANGE_NEAR, AVOID_RANGE_FAR,
-             AVOID_OFFSET_MAX, AVOID_OFFSET_MIN);
+// ----- Open Challenge: BLIND dead-reckoning (encoder + gyro only) -----
+// Никакого ToF, никакой камеры, никакого wall-following.
+// Тупо: проехал N см → повернул 90° → повторил 4 раза → стоп.
+//
+// Прямая держится гироскопом (heading-hold), длина прямой меряется энкодером,
+// поворот меряется гироскопом. Это самая надёжная dead-reckoning схема.
+enum BlindDriveState { B_DRIVE, B_TURN, B_DONE };
+static BlindDriveState blindState        = B_DRIVE;
+static float           blindTargetYaw    = 0.0f;
+static long            blindStartTicks   = 0;
+static float           blindTurnStartYaw = 0.0f;
+static unsigned long   blindTurnStartMs  = 0;
+static int             blindSegments     = 0;
+static bool            blindInited       = false;
+
+// --- Параметры. Подкручивай если робот не дотянет/перетянет. ---
+#define BLIND_SEGMENT_CM       90    // длина каждой прямой, см
+#define BLIND_FIRST_SEGMENT_CM 50    // первая прямая (мы стартуем в середине секции)
+#define BLIND_TURN_DEG         85    // на сколько крутим по гироскопу
+#define BLIND_TURN_TIMEOUT_MS  3500
+#define BLIND_HEADING_GAIN     1.6f
+#define BLIND_TOTAL_SEGMENTS   4     // 4 поворота = 1 полный круг
+
+static float wrap180(float a) {
+  while (a >  180.0f) a -= 360.0f;
+  while (a < -180.0f) a += 360.0f;
+  return a;
+}
+
+void updateOpenOval() {
+#if OPEN_FORCE_MOTOR_TEST
+  unsigned long phase = (millis() / OPEN_FORCE_REVERSE_MS) % 2;
+  targetSteering    = SERVO_CENTER;
+  targetSpeed       = phase == 0 ? OPEN_FORCE_TEST_SPEED : -OPEN_FORCE_TEST_SPEED;
+  targetHeading     = yawAngle;
+  lastActivePillar  = 0;
+  lastCameraError   = 0;
+  return;
+#endif
+
+  // Первый раз — фиксируем стартовый курс и точку отсчёта энкодера.
+  if (!blindInited) {
+    blindTargetYaw  = yawAngle;
+    blindStartTicks = totalDistLeft;
+    blindInited     = true;
+  }
+
+  switch (blindState) {
+
+    // -------- Прямая: едем по энкодеру, держим курс гироскопом --------
+    case B_DRIVE: {
+      float hErr      = wrap180(blindTargetYaw - yawAngle);
+      int steerOffset = (int)(hErr * BLIND_HEADING_GAIN);
+
+      targetSteering  = constrain(SERVO_CENTER + steerOffset,
+                                  SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+      targetSpeed     = MOTOR_MAX_SPEED;
+
+      long traveled = labs(totalDistLeft - blindStartTicks);
+      long needCm   = (blindSegments == 0)
+                      ? (long)BLIND_FIRST_SEGMENT_CM
+                      : (long)BLIND_SEGMENT_CM;
+
+      bool distanceReached = (traveled > needCm * (long)TICKS_PER_CM);
+
+      if (distanceReached) {
+        blindState        = B_TURN;
+        blindTurnStartYaw = yawAngle;
+        blindTurnStartMs  = millis();
+        Serial.print(">>> BLIND TURN ");
+        Serial.print(blindSegments + 1);
+        Serial.print(" START (dist ");
+        Serial.print(needCm);
+        Serial.println(" cm) <<<");
+      }
+      break;
+    }
+
+    // -------- Поворот: brake → full-lock в сторону трассы до ~85° --------
+    case B_TURN: {
+      unsigned long turnElapsed = millis() - blindTurnStartMs;
+
+      // Фаза 1: тормозим прямо, прежде чем выкручивать руль.
+      // Без этого робот ещё успевает проехать 8–15 см на полном замке
+      // и клипает носом фронтальную стену.
+      if (turnElapsed < BLIND_TURN_BRAKE_MS && commandSpeed > MOTOR_MIN_SPEED) {
+        targetSteering = SERVO_CENTER;
+        targetSpeed    = 0;
+        break;
+      }
+
+      targetSteering = (globalTrackDirection == -1) ? SERVO_MAX_LEFT : SERVO_MAX_RIGHT;
+      targetSpeed    = MOTOR_TURN_SLOW;
+
+      float turned    = wrap180(yawAngle - blindTurnStartYaw);
+      bool angleOK    = (fabsf(turned) >= BLIND_TURN_DEG);
+      bool timeoutHit = (millis() - blindTurnStartMs > BLIND_TURN_TIMEOUT_MS);
+
+      if (angleOK || timeoutHit) {
+        // CCW: yaw увеличивается → +90° к target. CW: -90°.
+        blindTargetYaw -= 90.0f * globalTrackDirection;
+        blindTargetYaw  = wrap180(blindTargetYaw);
+        blindSegments++;
+
+        Serial.print(">>> BLIND TURN ");
+        Serial.print(blindSegments);
+        Serial.print(timeoutHit ? " (TIMEOUT)" : "");
+        Serial.print(" DONE newYaw=");
+        Serial.println(blindTargetYaw, 1);
+
+        if (blindSegments >= BLIND_TOTAL_SEGMENTS) {
+          blindState = B_DONE;
+          Serial.println(">>> 1 LAP COMPLETE — STOP <<<");
+        } else {
+          blindState      = B_DRIVE;
+          blindStartTicks = totalDistLeft;
+        }
+      }
+      break;
+    }
+
+    // -------- Финиш --------
+    case B_DONE: {
+      targetSteering = SERVO_CENTER;
+      targetSpeed    = 0;
+      break;
+    }
+  }
+
+  targetHeading    = yawAngle;
+  lastActivePillar = 0;
+  lastCameraError  = 0;
+}
+
+// ----- Obstacle Challenge: blind dead-reckoning + reactive pillar avoidance -----
+// Тот же шаблон, что в updateOpenOval(), но 4 поворота × 3 круга = 12 сегментов.
+// Если камера видит столб ближе ~80 см — добавляется коррекция руля:
+//   RED   → проходим слева, держим в правой части кадра  (X≈+60)
+//   GREEN → проходим справа, держим в левой части кадра  (X≈-60)
+// Если камера выключена/не калибрована, столбы просто не видны и работает чистый
+// dead-reckoning. После 12 сегментов робот останавливается.
+enum ObstacleDriveState { O_DRIVE, O_TURN, O_DONE };
+static ObstacleDriveState obsState        = O_DRIVE;
+static float              obsTargetYaw    = 0.0f;
+static long               obsStartTicks   = 0;
+static float              obsTurnStartYaw = 0.0f;
+static unsigned long      obsTurnStartMs  = 0;
+static int                obsSegments     = 0;
+static bool               obsInited       = false;
+
+#define OBS_TOTAL_SEGMENTS    12   // 4 поворота × 3 круга
+#define OBS_PILLAR_RANGE_CM   80
+#define OBS_PILLAR_TARGET_X   60   // целевая X-позиция столба в кадре (px)
+#define OBS_PILLAR_GAIN_DIV   4    // делитель для коррекции
+#define OBS_PILLAR_CLAMP      35   // максимум коррекции от камеры
+
+void updateObstacleBlind() {
+#if OPEN_FORCE_MOTOR_TEST
+  unsigned long phase = (millis() / OPEN_FORCE_REVERSE_MS) % 2;
+  targetSteering    = SERVO_CENTER;
+  targetSpeed       = phase == 0 ? OPEN_FORCE_TEST_SPEED : -OPEN_FORCE_TEST_SPEED;
+  targetHeading     = yawAngle;
+  lastActivePillar  = 0;
+  lastCameraError   = 0;
+  return;
+#endif
+
+  if (!obsInited) {
+    obsTargetYaw  = yawAngle;
+    obsStartTicks = totalDistLeft;
+    obsInited     = true;
+  }
+
+  switch (obsState) {
+
+    // -------- Прямая: heading-hold + реактивное обхождение столбов --------
+    case O_DRIVE: {
+      float hErr      = wrap180(obsTargetYaw - yawAngle);
+      int steerOffset = (int)(hErr * BLIND_HEADING_GAIN);
+
+      // --- Обход столбов (поверх heading-hold) ---
+      bool hasRed   = (camRedDist   > 0 && camRedDist   < OBS_PILLAR_RANGE_CM);
+      bool hasGreen = (camGreenDist > 0 && camGreenDist < OBS_PILLAR_RANGE_CM);
+
+      int pillarErr = 0;
+      if (hasRed && hasGreen) {
+        // Видим оба — реагируем на ближайший.
+        if (camRedDist <= camGreenDist)
+          pillarErr = camRedX - OBS_PILLAR_TARGET_X;
+        else
+          pillarErr = camGreenX + OBS_PILLAR_TARGET_X;
+      } else if (hasRed) {
+        pillarErr = camRedX - OBS_PILLAR_TARGET_X;     // RED → keep on RIGHT
+      } else if (hasGreen) {
+        pillarErr = camGreenX + OBS_PILLAR_TARGET_X;   // GREEN → keep on LEFT
+      }
+
+      int pillarSteer = pillarErr / OBS_PILLAR_GAIN_DIV;
+      pillarSteer     = constrain(pillarSteer, -OBS_PILLAR_CLAMP, OBS_PILLAR_CLAMP);
+      steerOffset    += pillarSteer;
+
+      targetSteering = constrain(SERVO_CENTER + steerOffset,
+                                 SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
+      targetSpeed    = MOTOR_MAX_SPEED;
+
+      long traveled = labs(totalDistLeft - obsStartTicks);
+      long needCm   = (obsSegments == 0)
+                      ? (long)BLIND_FIRST_SEGMENT_CM
+                      : (long)BLIND_SEGMENT_CM;
+
+      bool distanceReached = (traveled > needCm * (long)TICKS_PER_CM);
+
+      if (distanceReached) {
+        obsState        = O_TURN;
+        obsTurnStartYaw = yawAngle;
+        obsTurnStartMs  = millis();
+        Serial.print(">>> OBS TURN ");
+        Serial.print(obsSegments + 1);
+        Serial.print(" START (dist ");
+        Serial.print(needCm);
+        Serial.println(" cm) <<<");
+      }
+      break;
+    }
+
+    // -------- Поворот: brake → full-lock в сторону трассы до ~85° по гироскопу --------
+    case O_TURN: {
+      unsigned long turnElapsed = millis() - obsTurnStartMs;
+
+      // Фаза 1: тормозим прямо перед выкручиванием руля.
+      if (turnElapsed < BLIND_TURN_BRAKE_MS && commandSpeed > MOTOR_MIN_SPEED) {
+        targetSteering = SERVO_CENTER;
+        targetSpeed    = 0;
+        break;
+      }
+
+      targetSteering = (globalTrackDirection == -1) ? SERVO_MAX_LEFT : SERVO_MAX_RIGHT;
+      targetSpeed    = MOTOR_TURN_SLOW;
+
+      float turned    = wrap180(yawAngle - obsTurnStartYaw);
+      bool angleOK    = (fabsf(turned) >= BLIND_TURN_DEG);
+      bool timeoutHit = (millis() - obsTurnStartMs > BLIND_TURN_TIMEOUT_MS);
+
+      if (angleOK || timeoutHit) {
+        obsTargetYaw -= 90.0f * globalTrackDirection;
+        obsTargetYaw  = wrap180(obsTargetYaw);
+        obsSegments++;
+
+        Serial.print(">>> OBS TURN ");
+        Serial.print(obsSegments);
+        Serial.print(timeoutHit ? " (TIMEOUT)" : "");
+        Serial.print(" DONE  lap=");
+        Serial.print(obsSegments / 4 + (obsSegments % 4 == 0 ? 0 : 1));
+        Serial.print(" newTargetYaw=");
+        Serial.println(obsTargetYaw, 1);
+
+        if (obsSegments >= OBS_TOTAL_SEGMENTS) {
+          obsState = O_DONE;
+          Serial.println(">>> 3 LAPS COMPLETE — STOP <<<");
+        } else {
+          obsState      = O_DRIVE;
+          obsStartTicks = totalDistLeft;
+        }
+      }
+      break;
+    }
+
+    // -------- Финиш --------
+    case O_DONE: {
+      targetSteering = SERVO_CENTER;
+      targetSpeed    = 0;
+      break;
+    }
+  }
+
+  targetHeading    = yawAngle;
+  lastActivePillar = 0;
+  lastCameraError  = 0;
 }
 
 // Main control function — called every LOOP_INTERVAL (10 ms).
-// Priority order (STRICT, per spec):
-//   1. BLIND_TURN / SAFE_STOP / PARKING states short-circuit everything.
-//   2. Blind-turn ENTRY check (WALL_BIT / near pillar) — camera-independent.
-//   3. Camera offline → gyro heading hold.
-//   4. Camera online  → pillar PID or gyro heading hold.
-//   5. Dynamic speed + front-ToF braking.
+// TRACKING: только updateOpenOval / updateObstacleBlind (энкодер + гироскоп + камера на столбы).
 void updateControl() {
   if (raceFinished)        return;
   if (encoderFaultActive) { safeStop(); return; }
@@ -1071,157 +1247,11 @@ void updateControl() {
   if (currentState == STATE_PARKING)    { updateParking();    return; }
   if (currentState == STATE_BLIND_TURN) { updateBlindTurn();  return; }
 
-  // ===================== STATE_TRACKING =====================
-
-  // ---------- (2) Blind-turn entry — evaluated BEFORE camera online ----------
-  // Tally: close-wall frame OR either pillar very close ahead.
-  bool nearWallFlag    = (camModeFlag & CAM_FLAG_WALL) != 0;
-  bool nearRedPillar   = (camRedDist   > 0 && camRedDist   < 35);
-  bool nearGreenPillar = (camGreenDist > 0 && camGreenDist < 35);
-  bool nearFrontToF    = false;
-#ifdef USE_VL53L1X
-  nearFrontToF = (tofFrontOK && distFrontMM > 0 && distFrontMM < TOF_EMERGENCY_MM);
-#endif
-  if (nearWallFlag || nearRedPillar || nearGreenPillar || nearFrontToF)
-    closeWallCount++;
-  else
-    closeWallCount = 0;
-
-  if (closeWallCount >= 3 && directionConfirmed) {
-    enterBlindTurn(globalTrackDirection);
+  if (!isObstacleMode) {
+    updateOpenOval();
     return;
   }
-  // If we are very close and direction has not yet been confirmed, pick CW
-  // as a reasonable default so we at least avoid a crash.
-  if (closeWallCount >= 3 && !directionConfirmed) {
-    enterBlindTurn(1);
-    return;
-  }
-
-  // ---------- (3) Camera offline → gyroscope heading hold ----------
-  if (!cameraOnline) {
-    if (millis() - lastCameraTime > CAMERA_OFFLINE_STOP_MS) {
-      Serial.println("CRITICAL: camera offline > 3 s -> SAFE STOP");
-      safeStop();
-      return;
-    }
-    float hErr = targetHeading - yawAngle;
-    while (hErr >  180) hErr -= 360;
-    while (hErr < -180) hErr += 360;
-    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * hErr),
-                               SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-    // Conservative speed: slow if last known front distance was close.
-    int blindSpeed = (distFrontMM < 800) ? MOTOR_MIN_SPEED : MOTOR_TURN_SLOW;
-    targetSpeed = blindSpeed;
-    return;
-  }
-
-  // ---------- (4) Camera online — pillar PID or heading hold ----------
-  bool hasRed   = (camRedDist   > 0 && camRedDist   < 999);
-  bool hasGreen = (camGreenDist > 0 && camGreenDist < 999);
-  bool pillarsRelevant = isObstacleMode && (hasRed || hasGreen);
-
-  if (pillarsRelevant && newCameraData) {
-    // Which pillar is the primary (nearest) controller?
-    //   Red  : desired X = +OFFSET  (pillar on our RIGHT  → error = RedX   - desired)
-    //   Green: desired X = -OFFSET  (pillar on our LEFT   → error = GreenX - desired)
-    int  primaryKind = 0;      // 3 = red, 4 = green
-    int  avoidError  = 0;
-
-    if (hasRed && hasGreen) {
-      // ----- S-CURVE: both pillars visible -----
-      // The NEAREST pillar steers primarily; the far pillar nudges the
-      // setpoint so the car starts repositioning earlier.
-      bool redIsCloser = (camRedDist <= camGreenDist);
-
-      if (redIsCloser) {
-        primaryKind   = 3;
-        int offsetMag = calcPillarOffsetMagnitude(camRedDist);
-        int desiredX  = +offsetMag;
-        int baseError = camRedX - desiredX;
-
-        // Pre-position from the FAR green pillar.
-        int farOffset = calcPillarOffsetMagnitude(camGreenDist);
-        int farDesiredX = -farOffset;
-        int preShift    = (camGreenX - farDesiredX) / 4;   // quarter-weight
-        avoidError = baseError + preShift;
-      } else {
-        primaryKind   = 4;
-        int offsetMag = calcPillarOffsetMagnitude(camGreenDist);
-        int desiredX  = -offsetMag;
-        int baseError = camGreenX - desiredX;
-
-        int farOffset   = calcPillarOffsetMagnitude(camRedDist);
-        int farDesiredX = +farOffset;
-        int preShift    = (camRedX - farDesiredX) / 4;
-        avoidError = baseError + preShift;
-      }
-    } else if (hasRed) {
-      primaryKind   = 3;
-      int offsetMag = calcPillarOffsetMagnitude(camRedDist);
-      int desiredX  = +offsetMag;
-      avoidError    = camRedX - desiredX;
-    } else {  // hasGreen
-      primaryKind   = 4;
-      int offsetMag = calcPillarOffsetMagnitude(camGreenDist);
-      int desiredX  = -offsetMag;
-      avoidError    = camGreenX - desiredX;
-    }
-
-    // Reset transient PID state when the primary pillar colour changes —
-    // otherwise the integrator and EMA both fight the new setpoint.
-    if (primaryKind != lastActivePillar) {
-      integralError      = 0.0f;
-      filteredDerivative = 0.0f;
-      lastActivePillar   = primaryKind;
-    }
-
-    // EMA-filtered derivative.
-    int rawDeriv = avoidError - lastCameraError;
-    filteredDerivative = DERIVATIVE_ALPHA * rawDeriv +
-                         (1.0f - DERIVATIVE_ALPHA) * filteredDerivative;
-    lastCameraError = avoidError;
-
-    integralError += avoidError;
-    integralError = constrain(integralError, -INTEGRAL_CLAMP, INTEGRAL_CLAMP);
-
-    int correction = (int)(PID_KP * avoidError +
-                           PID_KI * integralError +
-                           PID_KD * filteredDerivative);
-    targetSteering = constrain(SERVO_CENTER + correction,
-                               SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-
-    // Sync heading — the gyro-hold target should equal current yaw whenever
-    // the camera is actively driving steering (so losing the camera is a
-    // gentle handoff, not a snap).
-    targetHeading = yawAngle;
-
-  } else {
-    // ----- No pillars in view → gyroscope heading hold -----
-    float hErr = targetHeading - yawAngle;
-    while (hErr >  180) hErr -= 360;
-    while (hErr < -180) hErr += 360;
-    targetSteering = constrain(SERVO_CENTER + (int)(GYRO_KP * hErr),
-                               SERVO_MAX_LEFT, SERVO_MAX_RIGHT);
-    // A new heading-hold episode — clear pillar state.
-    lastActivePillar = 0;
-    lastCameraError  = 0;
-  }
-
-  // ---------- (5) Dynamic speed control ----------
-  int turnAmount = abs(targetSteering - SERVO_CENTER);
-  if      (turnAmount > 30) targetSpeed = MOTOR_TURN_SLOW;
-  else if (turnAmount > 15) targetSpeed = MOTOR_TURN_FAST;
-  else                      targetSpeed = MOTOR_MAX_SPEED;
-
-#ifdef USE_VL53L1X
-  if (tofFrontOK && distFrontMM > 0 && distFrontMM < TOF_SLOW_DOWN_MM) {
-    int tofSpeed = map(distFrontMM, TOF_EMERGENCY_MM, TOF_SLOW_DOWN_MM,
-                       MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
-    tofSpeed = constrain(tofSpeed, MOTOR_MIN_SPEED, MOTOR_MAX_SPEED);
-    targetSpeed = min(targetSpeed, tofSpeed);
-  }
-#endif
+  updateObstacleBlind();
 }
 
 // ============================================================
@@ -1247,6 +1277,27 @@ void checkSerialCommands() {
         if (t == 'I' || t == 'i') { PID_KI = v; integralError = 0.0f;
                                     Serial.print("Ki=");  Serial.println(PID_KI,  5); }
         if (t == 'G' || t == 'g') { GYRO_KP = v; Serial.print("Gk="); Serial.println(GYRO_KP, 4); }
+      } else if (cmdPos == 1) {
+        char t = cmdBuf[0];
+        if (t == 'g' || t == 'G') {
+          if (!raceStarted) {
+            raceStarted    = true;
+            currentState   = STATE_TRACKING;
+            lastIMUTime    = millis();
+            lastCameraTime = millis();
+            lastYaw        = yawAngle;
+            targetHeading  = yawAngle;
+            Serial.println("+==========================+");
+            Serial.println("|   RACE STARTED via 'g'   |");
+            Serial.println("+==========================+");
+            digitalWrite(LED_PIN, HIGH);
+          }
+        }
+        if ((t == 's' || t == 'S') && raceStarted) {
+          currentState = STATE_SAFE_STOP;
+          safeStop();
+          Serial.println(">>> STOPPED via 's' <<<");
+        }
       }
       cmdPos = 0;
     } else if (cmdPos < 15) {
@@ -1295,25 +1346,25 @@ void setup() {
   // I2C — две независимые шины.
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000);
-  Wire.setWireTimeout(3000, true);    // 3 ms HW timeout + auto-reset
+  Wire.setTimeout(3);    // 3 ms HW timeout
 
   Wire1.begin(I2C_SDA2, I2C_SCL2);
   Wire1.setClock(400000);
-  Wire1.setWireTimeout(3000, true);
+  Wire1.setTimeout(3);
 
   // Steering servo.
   steeringServo.attach(SERVO_PIN, 500, 2500);
   setSteering(SERVO_CENTER);
 
-  // BTS7960 motor driver — both half-bridges enabled, PWM on LEDC 0/1.
+  // BTS7960 motor driver — both half-bridges enabled.
   pinMode(MOTOR_R_EN, OUTPUT);
   pinMode(MOTOR_L_EN, OUTPUT);
   digitalWrite(MOTOR_R_EN, HIGH);
   digitalWrite(MOTOR_L_EN, HIGH);
-  ledcSetup(0, 20000, 8);             // 20 kHz, 8-bit
-  ledcAttachPin(MOTOR_R_PWM, 0);
-  ledcSetup(1, 20000, 8);
-  ledcAttachPin(MOTOR_L_PWM, 1);
+  
+  // ESP_ARDUINO_VERSION_MAJOR >= 3 APIs
+  ledcAttach(MOTOR_R_PWM, 20000, 8); 
+  ledcAttach(MOTOR_L_PWM, 20000, 8);
   setMotorSpeed(0);
 
   // IMU (ICM-20948) — Bus 1 (Wire), адрес 0x68 (AD0=GND).
@@ -1326,17 +1377,23 @@ void setup() {
   }
   calibrateGyro();
 
-  // VL53L1X front + side (graceful if absent).
-  initToF();
-
   // Time-base priming.
-  lastIMUTime    = millis();
-  lastCameraTime = millis();
   targetHeading  = yawAngle;
-  currentState   = STATE_INIT;
 
   Serial.println("=== READY ===");
-  Serial.println("Press & release E-STOP to START the race.");
+  Serial.println(">>> AUTO-STARTING IN 3 SECONDS... <<<");
+  delay(3000);
+
+  raceStarted    = true;
+  currentState   = STATE_TRACKING;
+  lastIMUTime    = millis();
+  lastCameraTime = millis();
+  lastYaw        = yawAngle;
+  targetHeading  = yawAngle;
+  Serial.println("+==========================+");
+  Serial.println("|   RACE AUTO-STARTED!     |");
+  Serial.println("+==========================+");
+  digitalWrite(LED_PIN, HIGH);
 }
 
 // ============================================================
@@ -1366,14 +1423,12 @@ void loop() {
     handleStartButton();
     readCameraData();
     updateYaw();
-    readToF();
     return;
   }
 
   // ===== Active race frame =====
   readCameraData();
   updateYaw();
-  readToF();
 
   checkLapCountGyro();
   checkLapCountLine();
@@ -1401,9 +1456,8 @@ void loop() {
     Serial.print("/");     Serial.print((int)(fabsf(totalRotation) / LAP_DEGREES));
     Serial.print(") R:");  Serial.print(camRedDist);
     Serial.print(" G:");   Serial.print(camGreenDist);
-    Serial.print(" F:");   Serial.print(distFrontMM);
-    Serial.print(" S:");   Serial.print(distSideMM);
     Serial.print(" M:");   Serial.print(camModeFlag);
+    Serial.print(" t:");   Serial.print(targetSpeed);
     Serial.print(" v:");   Serial.print(commandSpeed);
     Serial.print(" s:");   Serial.print(targetSteering);
     Serial.print(" ");
