@@ -15,9 +15,10 @@
 #define WRO_TARGET_TEST_ENCODERS           8
 #define WRO_TARGET_TEST_TFMINI             9   // NEW: TFMini-S distance test
 #define WRO_TARGET_BENCH_TEST              10  // NEW: full sensor bench test
+#define WRO_TARGET_V12_MAIN                11  // NEW: clean-slate v12 main firmware
 
 // ── Активный режим — меняй только эту строку ──────────────────
-//   1  EPS323 (основная программа)
+//   1  EPS323 (старая v11 программа — теперь только справочник)
 //   2  SCAN_I2C (только IMU должен быть на I2C в v12)
 //   3  TEST_MOTOR_SERVO_DRIVE (мотор + серво вместе)
 //   4  TEST_NO_SENSORS (круги без датчиков, таймер)
@@ -27,4 +28,5 @@
 //   8  TEST_ENCODERS (AS5048A SPI энкодеры)
 //   9  TEST_TFMINI (TFMini-S дальномеры по UART)
 //  10  BENCH_TEST (все датчики + актуаторы)
-#define WRO_ACTIVE_TARGET WRO_TARGET_EPS323
+//  11  V12_MAIN (новая основная программа: Open + Obstacle Challenge)
+#define WRO_ACTIVE_TARGET WRO_TARGET_V12_MAIN

@@ -1,0 +1,126 @@
+#include "wro_build_target.h"
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+
+#include <Arduino.h>
+#include "wro_config_v12.h"
+#include "wro_pid.h"
+#include "wro_behavior_obstacle.h"
+
+int g_obs_steer_us       = SERVO_CENTER_US;
+int g_obs_speed_pwm      = OBS_MAX_PWM;
+int g_obs_active_pillar  = 0;
+
+static float    headingTarget    = 0.0f;
+static PidState pidPillar;
+static PidState pidHeading;
+static unsigned long lastUpdateMs = 0;
+static unsigned long noPillarSinceMs = 0;
+static unsigned long brakeUntilMs    = 0;
+static int      lastActivePillar = 0;
+
+void obs_init() {
+  pid_init(pidPillar,
+           PILLAR_KP, PILLAR_KI, PILLAR_KD,
+           PILLAR_INT_CLAMP, (float)PILLAR_OUTPUT_CLAMP_US, PILLAR_DERIV_EMA_A);
+  pid_init(pidHeading,
+           HEADING_KP, 0.0f, HEADING_KD,
+           150.0f, 350.0f, 0.30f);
+  headingTarget    = 0.0f;
+  noPillarSinceMs  = 0;
+  brakeUntilMs     = 0;
+  lastActivePillar = 0;
+  lastUpdateMs     = millis();
+}
+
+void obs_reset() {
+  pid_reset(pidPillar);
+  pid_reset(pidHeading);
+  noPillarSinceMs  = 0;
+  brakeUntilMs     = 0;
+  lastActivePillar = 0;
+  lastUpdateMs     = millis();
+}
+
+void obs_set_target_heading(float deg) {
+  headingTarget = deg;
+  pid_reset(pidHeading);
+}
+
+bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
+                const CameraData &cam) {
+  unsigned long now = millis();
+  float dt = (now - lastUpdateMs) * 0.001f;
+  lastUpdateMs = now;
+  if (dt <= 0.0f) dt = 0.001f;
+
+  // Pillar selection: pick the closer of the two visible pillars.
+  bool redSeen   = (cam.redDist   < 999) && cam.online;
+  bool greenSeen = (cam.greenDist < 999) && cam.online;
+
+  int  active = 0;     // 0=none, 3=red, 4=green
+  int  far    = 0;     // pre-position pillar (the one we're not avoiding)
+  if (redSeen && greenSeen) {
+    if (cam.redDist <= cam.greenDist) { active = 3; far = 4; }
+    else                              { active = 4; far = 3; }
+  } else if (redSeen)    { active = 3; }
+  else if (greenSeen)    { active = 4; }
+
+  if (active != lastActivePillar) {
+    pid_reset(pidPillar);   // reset integral on color switch
+    lastActivePillar = active;
+  }
+  g_obs_active_pillar = active;
+
+  float u = 0.0f;
+
+  if (active != 0) {
+    int activeX, setpoint;
+    if (active == 3) { activeX = cam.redX;   setpoint = +PILLAR_OFFSET_PX; }   // red → keep right
+    else             { activeX = cam.greenX; setpoint = -PILLAR_OFFSET_PX; }   // green → keep left
+
+    float err = (float)(activeX - setpoint);
+    u = pid_step(pidPillar, err, dt);
+
+    if (far != 0) {
+      int farX = (far == 3) ? cam.redX : cam.greenX;
+      int farSet = (far == 3) ? +PILLAR_OFFSET_PX : -PILLAR_OFFSET_PX;
+      float fe = (float)(farX - farSet);
+      u += PILLAR_FAR_GAIN * (PILLAR_KP * fe);    // contribution from the far pillar
+    }
+    noPillarSinceMs = 0;
+  } else {
+    // No pillar visible — blend toward heading-hold over PILLAR_BLEND_OUT_MS.
+    if (noPillarSinceMs == 0) {
+      noPillarSinceMs = now;
+      pid_reset(pidPillar);
+    }
+    float blend = (float)(now - noPillarSinceMs) / (float)PILLAR_BLEND_OUT_MS;
+    if (blend > 1.0f) blend = 1.0f;
+
+    float herr = wrap180(headingTarget - yaw_deg);
+    float hu   = pid_step(pidHeading, herr, dt);
+    u = (1.0f - blend) * 0.0f + blend * hu;
+  }
+
+  if (u >  PILLAR_OUTPUT_CLAMP_US) u =  PILLAR_OUTPUT_CLAMP_US;
+  if (u < -PILLAR_OUTPUT_CLAMP_US) u = -PILLAR_OUTPUT_CLAMP_US;
+
+  int us = (int)(SERVO_CENTER_US + u);
+  if (us > SERVO_RIGHT_SAFE_US) us = SERVO_RIGHT_SAFE_US;
+  if (us < SERVO_LEFT_SAFE_US)  us = SERVO_LEFT_SAFE_US;
+  g_obs_steer_us  = us;
+  g_obs_speed_pwm = OBS_MAX_PWM;
+
+  // Safety override: hard brake if a wall is close (corner FSM hasn't taken over yet).
+  bool brakeNow = false;
+  if (tf_front_ok && tf_front_mm > 0 && tf_front_mm < PILLAR_SAFETY_FRONT_MM) {
+    brakeUntilMs = now + 100;
+  }
+  if (now < brakeUntilMs) {
+    g_obs_speed_pwm = 0;
+    brakeNow = true;
+  }
+  return brakeNow;
+}
+
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
