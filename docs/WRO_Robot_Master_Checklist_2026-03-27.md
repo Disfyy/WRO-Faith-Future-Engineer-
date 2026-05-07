@@ -1,9 +1,11 @@
 # WRO Future Engineers — Robot Master Checklist
 
-Date: 9 April 2026
+Date: 9 April 2026 (last full revision); partial v12 update May 2026.
 Team: ____________________
 Robot Version: ____________________
 Firmware Version: ____________________
+
+> **Note (May 2026):** The hardware list and procedure references in this checklist were written for v11. The Pre-Flight Procedure section has been updated for v12 in-line. Other sections (line numbers in `eps323.cpp` etc.) remain v11; treat them as historical until a full re-audit. For day-of-race use, prefer [`WRO_Quick_Race_Checklist.md`](WRO_Quick_Race_Checklist.md) and [`WRO_Preflight_Log.md`](WRO_Preflight_Log.md).
 
 ---
 
@@ -23,11 +25,12 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 
 ## 3) Hardware Required (Minimum)
 
-### Controller and logic
-- ESP32 DevKitC V4
-- TCA9548A I2C multiplexer
-- ICM-20948 IMU
-- AS5600 encoder x2
+### Controller and logic (v12)
+- ESP32-S3-DevKitC-1 N8R8
+- ICM-20948 IMU (only I2C device — no mux)
+- AS5048A magnetic encoder × 2 (SPI HSPI, 14-bit)
+- TFMini-S front distance (UART1, 12 m range)
+- OpenMV H7 Plus (UART2, vision)
 - OpenMV H7 Plus camera (or configured equivalent)
 
 ### Motion and power
@@ -85,9 +88,11 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 - Adafruit ICM20948
 - Adafruit Unified Sensor
 
-### Code files
-- scanerI2C.cpp (diagnostic scanner)
-- eps323.cpp (main race logic)
+### Code files (v12)
+- `scan_i2c_v12.cpp` (diagnostic scanner — target 2)
+- `wro_v12_main.cpp` (main race firmware — target 11)
+- `bench_test_v12.cpp` (full hardware bench — target 10)
+- `legacy_eps323.cpp` (v11 reference; not active)
 
 ### Key protocol file
 - WRO_OpenMV_UART_Protocol.md (v3.0 with 6 fields + CRC)
@@ -118,29 +123,36 @@ If FAIL:
 - Fix cable/connector issues immediately
 - Re-run Step A before proceeding
 
-### Step B — Sensor bus check
-1. Upload and run scanerI2C.cpp
+### Step B — Sensor bus check (v12)
+1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_SCAN_I2C` (target 2) and upload `scan_i2c_v12.cpp`.
 2. Confirm:
-   - TCA9548A detected at 0x70
-   - CH0 has IMU at expected address
-   - CH1 and CH2 have AS5600
-   - No unexpected devices on empty channels
-3. If mismatch appears, apply rollback sequence from Stage 6.7 in the main guide
+   - **Only `0x68`** (ICM-20948 IMU) appears.
+   - No other addresses (no TCA9548A, no AS5600, no VL53L1X — those are v11).
+3. Run target 8 (`test_encoders.cpp`): both AS5048A SPI encoders read 0–16383, accumulate ticks.
+4. Run target 9 (`test_tfmini.cpp`): front TFMini-S returns sane distance with strength > 100.
+5. If mismatch appears, stop and check wiring against `docs/WRO_Wiring_Map_v12.md`.
 
-Expected map:
-- TCA9548A: 0x70
-- CH0: 0x69 (ICM-20948)
-- CH1: 0x36 (AS5600 left)
-- CH2: 0x36 (AS5600 right)
+Expected map (v12):
+- I2C bus: only `0x68` (ICM-20948 IMU)
+- SPI HSPI: AS5048A Left (CS=GPIO 10), AS5048A Right (CS=GPIO 14)
+- UART1: TFMini-S front (GPIO 15/16, 5 V power)
+- UART2: OpenMV camera (GPIO 17/18)
 
-### Step C — Main firmware check
-1. Upload eps323.cpp
-2. Open serial output
+### Step C — Main firmware check (v12)
+1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_V12_MAIN` (target 11) and upload `wro_v12_main.cpp`.
+2. Open serial monitor at 115200 baud.
 3. Confirm boot sequence:
-   - IMU init OK
-   - Gyro calibration completes
-   - System ready message appears
-4. Trigger E-Stop physically and verify immediate stop
+   - Banner: `WRO FE 2026 — Team Faith — v12.0 main firmware`
+   - `Mode: OPEN` or `OBSTACLE` (matches `OBSTACLE_MODE` in `wro_config_v12.h`)
+   - `WiFi: OFF, BT: OFF` (Rule 11.10 compliance)
+   - `AS5048A SPI: OK`
+   - `TFMini-S FRONT: OK`
+   - `Camera UART2 ready`
+   - `ICM-20948 IMU: OK`
+   - `Calibrating gyro Z bias...` followed by bias value
+   - `System ready. Press E-Stop to start.`
+4. Trigger E-Stop physically (press+release) and verify the firmware accepts it as start.
+5. While the race runs, hold E-Stop and verify motor stops in <50 ms.
 
 If FAIL:
 - No floor tests
