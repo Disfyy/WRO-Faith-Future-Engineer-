@@ -16,5 +16,6 @@
 //   WRO_ACTIVE_TARGET = 8   →  test_encoders_v12.cpp   (AS5048A SPI тест)
 //   WRO_ACTIVE_TARGET = 9   →  test_tfmini.cpp         (TFMini-S UART тест)
 //   WRO_ACTIVE_TARGET = 10  →  bench_test_v12.cpp      (все датчики + актуаторы)
+//   WRO_ACTIVE_TARGET = 11  →  wro_v12_main.cpp        (новая основная программа)
 
 #include "wro_build_target.h"
