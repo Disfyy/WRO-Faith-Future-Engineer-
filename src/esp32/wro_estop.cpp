@@ -1,8 +1,8 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Arduino.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_estop.h"
 
 static unsigned long bootMs           = 0;
@@ -39,7 +39,7 @@ void estop_update() {
     rawLow = reading;
     edgeChangeMs = now;
   }
-  if (now - edgeChangeMs >= (unsigned long)ESTOP_DEBOUNCE_MS_V12) {
+  if (now - edgeChangeMs >= (unsigned long)ESTOP_DEBOUNCE_MS_V13) {
     if (rawLow != stableLow) {
       bool wasLow = stableLow;
       stableLow = rawLow;
@@ -69,4 +69,4 @@ bool estop_released_after_held(){ return releasedAfterHold; }
 void estop_consume_start()   { startRequested = false; }
 void estop_consume_release() { releasedAfterHold = false; }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

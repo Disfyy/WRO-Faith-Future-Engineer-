@@ -6,8 +6,11 @@
  * signals AND directionConfirmed AND debounce → too gated; sometimes never
  * fired. Exit used encoder distance, which lies during a slipping turn.
  *
- * v12 fix: corner detection is owned by TFMini-S front distance + IMU yaw
- * delta. Camera is NEVER an exit condition. Encoder ticks are telemetry-only.
+ * v12 fix: corner detection is owned by front-distance LiDAR + IMU yaw delta.
+ * Camera is NEVER an exit condition. Encoder ticks are telemetry-only.
+ * v13 reverts the front sensor from TFMini-S (UART, 12 m) back to VL53L1X
+ * (I2C, ~3 m practical) — same API contract through wro_sensors, only the
+ * driver under it changes. The corner FSM logic is untouched.
  *
  * State machine:
  *   ARMED → SLOWDOWN → COMMIT → BRAKE → EXECUTE → EXIT (→ ARMED via lockout)
@@ -45,8 +48,8 @@ bool corner_active();
 // Returns: true if the FSM is in CN_FAIL (caller should SAFE_STOP).
 bool corner_failed();
 
-// Update step. Call every loop tick after sensors (TFMini, IMU) are updated.
-// Pass current yaw and current TFMini front distance in mm.
+// Update step. Call every loop tick after sensors (VL53L1X front, IMU) are updated.
+// Pass current yaw and current front-distance reading in mm.
 void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned long now_ms);
 
 // Outputs (read after corner_update):

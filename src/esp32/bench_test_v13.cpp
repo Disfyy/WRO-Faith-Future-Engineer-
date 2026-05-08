@@ -3,9 +3,9 @@
 #if WRO_ACTIVE_TARGET == WRO_TARGET_BENCH_TEST
 
 /*
- * WRO v12 — Full Bench Test (ESP32-S3)
- * Tests: IMU (I2C), AS5048A (SPI), TFMini-S (UART),
- *        BTS7960 motor, servo, OpenMV camera, E-Stop
+ * WRO v13 — Full Bench Test (ESP32-S3)
+ * Tests: IMU (I2C0), 2× AS5600 (I2C0/I2C1), 2× VL53L1X (I2C0/I2C1 with XSHUT),
+ *        BTS7960 motor, JX servo, OpenMV camera, E-Stop.
  *
  * Serial commands:
  *   s  — full status print
@@ -19,26 +19,26 @@
  */
 
 #include <Wire.h>
-#include <SPI.h>
 #include <ESP32Servo.h>
 #include <Adafruit_ICM20948.h>
 #include <Adafruit_Sensor.h>
 
-#include "wro_hw_config_v12.h"
-#include "as5048a_spi.h"
-#include "tfmini_s.h"
+#include "wro_hw_config_v13.h"
+#include "as5600_dual_i2c.h"
+#include "vl53l1x_dual.h"
 
 Adafruit_ICM20948 icm;
 Servo steeringServo;
 
 bool imuOK      = false;
+bool encOK      = false;
 bool liveMode   = false;
 unsigned long motorStopAt = 0;
 String camLast  = "";
 unsigned long camLastMs = 0;
 
 void printHelp() {
-  Serial.println("=== WRO v12 BENCH TEST ===");
+  Serial.println("=== WRO v13 BENCH TEST ===");
   Serial.println("  s  full status  |  e  toggle live");
   Serial.println("  m  motor fwd 2s |  r  motor rev 2s");
   Serial.println("  l  servo left   |  c  center  |  k  right");
@@ -65,8 +65,8 @@ void printStatus() {
   Serial.println("\n=== STATUS ===");
 
   // IMU
-  Serial.print("IMU 0x68 (I2C GPIO"); Serial.print(I2C_SDA);
-  Serial.print("/"); Serial.print(I2C_SCL); Serial.print("): ");
+  Serial.print("IMU 0x68 (I2C0 GPIO"); Serial.print(I2C0_SDA);
+  Serial.print("/"); Serial.print(I2C0_SCL); Serial.print("): ");
   if (imuOK) {
     sensors_event_t a, g, m, t;
     icm.getEvent(&a, &g, &t, &m);
@@ -74,25 +74,29 @@ void printStatus() {
     Serial.print(" ax="); Serial.println(a.acceleration.x, 2);
   } else { Serial.println("NOT FOUND"); }
 
-  // Encoders
-  for (int i = 0; i < 2; i++) {
-    uint8_t cs = (i == 0) ? ENC_LEFT_CS : ENC_RIGHT_CS;
-    int raw = as5048a_readAngle(cs);
-    Serial.print(i == 0 ? "Encoder L (CS=GPIO" : "Encoder R (CS=GPIO");
-    Serial.print(cs); Serial.print("): ");
-    if (raw >= 0) {
-      Serial.print("OK  raw="); Serial.print(raw);
-      Serial.print("  "); Serial.print(raw * 360.0f / AS5048A_RESOLUTION, 1);
-      Serial.println("°");
-    } else { Serial.println("ERROR"); }
-  }
+  // Encoders (dual I2C)
+  int rL = readEncoderLeft();
+  int rR = readEncoderRight();
+  Serial.print("AS5600 Left  (I2C0 0x36): ");
+  if (rL >= 0) {
+    Serial.print("OK  raw="); Serial.print(rL);
+    Serial.print("  "); Serial.print(rL * 360.0f / AS5600_RESOLUTION, 1);
+    Serial.println("°");
+  } else { Serial.println("ERROR"); }
+  Serial.print("AS5600 Right (I2C1 0x36): ");
+  if (rR >= 0) {
+    Serial.print("OK  raw="); Serial.print(rR);
+    Serial.print("  "); Serial.print(rR * 360.0f / AS5600_RESOLUTION, 1);
+    Serial.println("°");
+  } else { Serial.println("ERROR"); }
 
-  // TFMini-S
-  Serial.print("TFMini-S front: ");
-  if (tfFront.ok) {
-    Serial.print("OK  "); Serial.print(tfFront.distCM);
-    Serial.print("cm  str="); Serial.println(tfFront.strength);
-  } else { Serial.println("NOT FOUND"); }
+  // VL53L1X
+  Serial.print("VL53L1X Front (I2C0 0x30): ");
+  if (tfFront.ok) { Serial.print("OK  "); Serial.print(tfFront.distMM); Serial.println("mm"); }
+  else            { Serial.println("NOT FOUND"); }
+  Serial.print("VL53L1X Side  (I2C1 0x31): ");
+  if (tfSide.ok)  { Serial.print("OK  "); Serial.print(tfSide.distMM);  Serial.println("mm"); }
+  else            { Serial.println("NOT FOUND"); }
 
   // Camera
   Serial.print("Camera (UART2): ");
@@ -105,12 +109,13 @@ void printStatus() {
 }
 
 void printLive() {
-  tfmini_readAll();
-  int rawL = readEncoderLeft();
-  int rawR = readEncoderRight();
-  Serial.print("L:"); Serial.print(rawL >= 0 ? rawL : -1);
-  Serial.print(" R:"); Serial.print(rawR >= 0 ? rawR : -1);
-  Serial.print(" F:"); Serial.print(tfFront.distCM); Serial.print("cm");
+  vl53_readAll();
+  int rL = readEncoderLeft();
+  int rR = readEncoderRight();
+  Serial.print("L:"); Serial.print(rL >= 0 ? rL : -1);
+  Serial.print(" R:"); Serial.print(rR >= 0 ? rR : -1);
+  Serial.print(" F:"); Serial.print(tfFront.ok ? tfFront.distMM : -1); Serial.print("mm");
+  Serial.print(" S:"); Serial.print(tfSide.ok  ? tfSide.distMM  : -1); Serial.print("mm");
   Serial.print(" E:"); Serial.print(digitalRead(ESTOP_PIN) == LOW ? "P" : "-");
   if (millis() - camLastMs < 500) { Serial.print(" CAM:"); Serial.print(camLast); }
   Serial.println();
@@ -133,22 +138,25 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n+=======================================+");
-  Serial.println("|   WRO v12 — BENCH TEST (ESP32-S3)     |");
+  Serial.println("|   WRO v13 — BENCH TEST (ESP32-S3)     |");
   Serial.println("+=======================================+");
 
   pinMode(ESTOP_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
 
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000);
+  // Bring up I2C0 and the IMU first; AS5600/VL53L1X drivers will ride on
+  // the same Wire object.
+  Wire.begin(I2C0_SDA, I2C0_SCL);
+  Wire.setClock(I2C_FREQ_HZ);
   imuOK = icm.begin_I2C(ICM20948_ADDRESS, &Wire);
   Serial.print("IMU: "); Serial.println(imuOK ? "OK" : "NOT FOUND");
 
-  as5048a_init();
+  encOK = as5600_init();    // also calls Wire1.begin
+  Serial.print("Enc init: "); Serial.println(encOK ? "OK" : "FAIL");
   Serial.print("Enc L: "); Serial.println(readEncoderLeft()  >= 0 ? "OK" : "NOT FOUND");
   Serial.print("Enc R: "); Serial.println(readEncoderRight() >= 0 ? "OK" : "NOT FOUND");
 
-  tfmini_initAll();
+  vl53_initAll();
 
   Serial2.begin(CAMERA_BAUD, SERIAL_8N1, CAMERA_RX, CAMERA_TX);
 
@@ -180,7 +188,7 @@ void loop() {
     else if (c != '\r') { uartBuf += c; }
   }
 
-  tfmini_readAll();
+  vl53_readAll();
 
   if (motorStopAt && millis() >= motorStopAt) { motorOff(); Serial.println("(motor stop)"); }
 

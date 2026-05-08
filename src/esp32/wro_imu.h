@@ -1,6 +1,10 @@
 #pragma once
 /*
- * IMU module — ICM-20948 over I2C (Wire, GPIO 8/9)
+ * IMU module — ICM-20948 over I2C0 (Wire, GPIO 8/9)
+ *
+ * In v13 the IMU shares Wire with AS5600 Left and VL53L1X Front. AS5600
+ * is a passive read-only register read at ~50 Hz; VL53L1X is also low
+ * traffic. The bus is well within 400 kHz capacity.
  *
  * Yaw integration uses gyro Z only with a static-bias offset measured
  * during boot calibration. Magnetometer is intentionally unused — brushed

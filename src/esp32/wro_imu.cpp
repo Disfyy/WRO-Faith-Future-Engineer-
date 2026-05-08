@@ -1,10 +1,10 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Adafruit_ICM20948.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_imu.h"
 
 static Adafruit_ICM20948 icm;
@@ -20,8 +20,12 @@ static unsigned long lastImuMs = 0;
 static int   failStreak   = 0;
 
 bool imu_init() {
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000);
+  // I2C0 (Wire) is shared with AS5600 Left + VL53L1X Front; the AS5600/VL53L1X
+  // drivers also call Wire.begin(I2C0_SDA, I2C0_SCL) — ESP-IDF tolerates
+  // repeated begin() so the order doesn't matter, but keeping a single
+  // setClock here ensures every device runs at I2C_FREQ_HZ.
+  Wire.begin(I2C0_SDA, I2C0_SCL);
+  Wire.setClock(I2C_FREQ_HZ);
   if (!icm.begin_I2C(ICM20948_ADDRESS)) {
     g_imu_ok = false;
     return false;
@@ -37,7 +41,7 @@ bool imu_calibrate_gyro() {
   Serial.print("Calibrating gyro Z bias");
   double sum = 0.0;
   int n = 0;
-  for (int i = 0; i < GYRO_CALIB_SAMPLES_V12; i++) {
+  for (int i = 0; i < GYRO_CALIB_SAMPLES_V13; i++) {
     sensors_event_t a, g, t, m;
     if (icm.getEvent(&a, &g, &t, &m)) {
       sum += g.gyro.z;
@@ -47,7 +51,7 @@ bool imu_calibrate_gyro() {
     delay(LOOP_INTERVAL_MS);
   }
   Serial.println();
-  if (n < GYRO_CALIB_SAMPLES_V12 / 2) {
+  if (n < GYRO_CALIB_SAMPLES_V13 / 2) {
     Serial.println("Gyro cal FAILED (not enough samples)");
     return false;
   }
@@ -91,4 +95,4 @@ void imu_update() {
 
 bool imu_is_healthy() { return g_imu_ok; }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

@@ -1,8 +1,8 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Arduino.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_imu.h"
 #include "wro_odometry.h"
 #include "wro_camera.h"
@@ -138,4 +138,4 @@ static const char* cornerStateName(int s) {
   }
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

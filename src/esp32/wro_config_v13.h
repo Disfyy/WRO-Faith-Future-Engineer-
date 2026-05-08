@@ -1,15 +1,18 @@
 #pragma once
 /*
- * WRO Future Engineers v12 — Algorithm Tunables
+ * WRO Future Engineers v13 — Algorithm Tunables
  *
- * Pin map and hardware constants live in wro_hw_config_v12.h.
+ * Pin map and hardware constants live in wro_hw_config_v13.h.
  * This file holds only behavior gains, thresholds, and the
  * compile-time challenge mode flag (Rule 9.9: no physical switches).
  *
- * Team Faith | WRO Future Engineers 2026 | v12.0
+ * v13 = v12 architecture (FSM + behaviors unchanged) but rewired for the
+ * original v11 sensor stack: AS5600 (dual I2C) + VL53L1X (XSHUT remap).
+ *
+ * Team Faith | WRO Future Engineers 2026 | v13.0
  */
 
-#include "wro_hw_config_v12.h"
+#include "wro_hw_config_v13.h"
 
 // ============================================================
 // 0.  CHALLENGE MODE — the ONLY compile-time flag (Rule 9.9)
@@ -18,11 +21,12 @@
 //   1 = Obstacle Challenge (red/green pillars + parking)
 #define OBSTACLE_MODE  0
 
-// Side TFMini-S not yet wired (GPIO 47). When mounted, set to 1.
-#define HAS_SIDE_TOF   0
+// Side VL53L1X is wired by default in v13 (the sensor exists; mux issues are
+// gone). Set to 0 only if you physically disconnect the side sensor.
+#define HAS_SIDE_TOF   1
 
 // ============================================================
-// 1.  CORNERING — TFMini-front + IMU yaw delta state machine
+// 1.  CORNERING — VL53L1X-front + IMU yaw delta state machine
 // ============================================================
 #define TURN_SLOWDOWN_MM      600    // begin pre-corner slowdown
 #define TURN_COMMIT_MM        350    // commit to turning
@@ -93,7 +97,7 @@
 // ============================================================
 // 7.  E-STOP / START BUTTON
 // ============================================================
-#define ESTOP_DEBOUNCE_MS_V12   20
+#define ESTOP_DEBOUNCE_MS_V13   20
 #define ESTOP_BOOT_GRACE_MS     500     // ignore button this long after boot
 #define ESTOP_LED_BLINK_IDLE    1000    // ms half-period
 #define ESTOP_LED_BLINK_ARMED   200
@@ -101,9 +105,9 @@
 // ============================================================
 // 8.  SAFETY THRESHOLDS
 // ============================================================
-#define ENC_FAIL_LIMIT_V12      50      // consecutive read failures → SAFE_STOP
+#define ENC_FAIL_LIMIT_V13      50      // consecutive read failures → SAFE_STOP
 #define IMU_FAIL_LIMIT          20
-#define TF_SILENT_MS            1000    // no valid frame this long → block corner detect
+#define TF_SILENT_MS            1000    // no valid VL53L1X frame this long → block corner detect
 #define CAM_SILENT_DEGRADE_MS   500     // mark camera offline
 #define CAM_SILENT_STOP_MS      3000    // SAFE_STOP in Obstacle if silent this long
 #define BROWNOUT_PROXY_MS       500     // PWM>0 but speed<5 cm/s this long → warn
@@ -113,12 +117,12 @@
 // ============================================================
 #define LOOP_INTERVAL_MS        10      // main control tick
 #define TELEMETRY_INTERVAL_MS   200
-#define GYRO_CALIB_SAMPLES_V12  300     // ~3 s @ 10 ms
+#define GYRO_CALIB_SAMPLES_V13  300     // ~3 s @ 10 ms
 #define IMU_DT_MAX              0.05f   // s — clamp for yaw integration
 
 // ============================================================
 // 10. SERVO SAFETY MARGIN
-//     wro_hw_config_v12.h has datasheet defaults (1000/1500/2000 µs).
+//     wro_hw_config_v13.h has datasheet defaults (1000/1500/2000 µs).
 //     Re-measure with target 7 (TEST_SERVO_CAL); add a margin to avoid
 //     stalling the servo against the mechanical end-stops (causes brownout).
 // ============================================================

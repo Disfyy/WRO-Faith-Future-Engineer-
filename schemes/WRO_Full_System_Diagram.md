@@ -1,17 +1,17 @@
-# WRO Full Structured System Diagram (v12)
+# WRO Full Structured System Diagram (v13)
 
-> **Active hardware revision:** v12 — ESP32-S3-DevKitC-1 + AS5048A SPI encoders + TFMini-S UART distance sensors.
-> Full pin reference: [`docs/WRO_Wiring_Map_v12.md`](../docs/WRO_Wiring_Map_v12.md).
-> Migration notes: [`docs/WRO_Migration_v11_to_v12.md`](../docs/WRO_Migration_v11_to_v12.md).
+> **Active hardware revision:** v13 — ESP32-S3-DevKitC-1 + 2× AS5600 dual-I2C + 2× VL53L1X (XSHUT-based runtime address remap).
+> Full pin reference: [`docs/WRO_Wiring_Map_v13.md`](../docs/WRO_Wiring_Map_v13.md).
+> Migration notes: [`docs/WRO_Migration_v12_to_v13.md`](../docs/WRO_Migration_v12_to_v13.md).
 
 ## Modules covered
 - Power chain: LiPo 2S/3S, KCD3 main switch, 5 V rail, 3.3 V rail (onboard ESP32-S3 regulator)
 - Controllers: ESP32-S3 (motion + sensor fusion), OpenMV H7 Plus (vision)
 - Actuators: BTS7960 + brushed DC motor, JX PDI-6221MG steering servo
 - Safety / status: E-Stop button, status LED, onboard WS2812 RGB
-- I2C bus: **single device** (ICM-20948 IMU @ 0x68). No mux.
-- SPI HSPI bus: 2× AS5048A magnetic encoders (14-bit)
-- UART1: TFMini-S front (115200 baud, 9-byte frames, 12 m range)
+- I2C0 (Wire, GPIO 8/9): ICM-20948 (0x68) + AS5600 Left (0x36) + VL53L1X Front (0x29 → 0x30)
+- I2C1 (Wire1, GPIO 11/12): AS5600 Right (0x36) + VL53L1X Side (0x29 → 0x31)
+- VL53L1X XSHUTs on GPIO 15 / 16 (third reserved on GPIO 47)
 - UART2: OpenMV camera (115200 baud, ASCII v3 protocol with XOR checksum)
 - Grounding: star ground point
 
@@ -64,31 +64,36 @@ flowchart LR
   end
 
   %% =========================
-  %% I2C - IMU only
+  %% I2C0 - IMU + AS5600 L + VL53L1X F
   %% =========================
-  subgraph I2C[I2C Topology - one bus, one device]
-    PUSDA[4.7k pull-up SDA -> 3.3V]
-    PUSCL[4.7k pull-up SCL -> 3.3V]
+  subgraph I2C0[I2C0 Wire - GPIO 8/9]
+    PUSDA0[4.7k pull-up SDA -> 3.3V]
+    PUSCL0[4.7k pull-up SCL -> 3.3V]
     IMU[ICM-20948 @ 0x68]
+    AS5600L[AS5600 Left @ 0x36]
+    TFFR[VL53L1X Front @ 0x30 / XSHUT GPIO15]
 
-    PUSDA --> IMU
-    PUSCL --> IMU
+    PUSDA0 --> IMU
+    PUSCL0 --> IMU
+    PUSDA0 --> AS5600L
+    PUSCL0 --> AS5600L
+    PUSDA0 --> TFFR
+    PUSCL0 --> TFFR
   end
 
   %% =========================
-  %% SPI HSPI - 2x AS5048A
+  %% I2C1 - AS5600 R + VL53L1X S
   %% =========================
-  subgraph SPIBUS[SPI HSPI - 2x AS5048A 14-bit]
-    ASL[AS5048A Left  / CS=GPIO10]
-    ASR[AS5048A Right / CS=GPIO14]
-  end
+  subgraph I2C1[I2C1 Wire1 - GPIO 11/12]
+    PUSDA1[4.7k pull-up SDA -> 3.3V]
+    PUSCL1[4.7k pull-up SCL -> 3.3V]
+    AS5600R[AS5600 Right @ 0x36]
+    TFSD[VL53L1X Side @ 0x31 / XSHUT GPIO16]
 
-  %% =========================
-  %% UART distance + camera
-  %% =========================
-  subgraph UART[UART Distance + Camera]
-    TFF[TFMini-S Front / UART1 12m]
-    TFS[TFMini-S Side / UART SW (GPIO47, optional)]
+    PUSDA1 --> AS5600R
+    PUSCL1 --> AS5600R
+    PUSDA1 --> TFSD
+    PUSCL1 --> TFSD
   end
 
   %% =========================
@@ -100,14 +105,12 @@ flowchart LR
   ESP -->|GPIO41 L_PWM| BTS
   ESP -->|GPIO42 PWM| SERVO
 
-  ESP -->|GPIO8 SDA| PUSDA
-  ESP -->|GPIO9 SCL| PUSCL
-
-  ESP -->|GPIO11 MOSI / GPIO12 SCK / GPIO13 MISO| ASL
-  ESP -->|GPIO11 MOSI / GPIO12 SCK / GPIO13 MISO| ASR
-
-  ESP -->|UART1 GPIO15 RX, GPIO16 TX 5V| TFF
-  ESP -.->|UART SW GPIO47 RX, optional| TFS
+  ESP -->|GPIO8 SDA| PUSDA0
+  ESP -->|GPIO9 SCL| PUSCL0
+  ESP -->|GPIO11 SDA| PUSDA1
+  ESP -->|GPIO12 SCL| PUSCL1
+  ESP -->|GPIO15 XSHUT| TFFR
+  ESP -->|GPIO16 XSHUT| TFSD
 
   %% =========================
   %% POWER DISTRIBUTION
@@ -115,13 +118,13 @@ flowchart LR
   V5 -->|+5V| ESP
   V5 -->|+5V| OPMV
   V5 -->|+5V high current| SERVO
-  V5 -->|+5V REQUIRED for TFMini| TFF
-  V5 -.->|+5V if TFS wired| TFS
+  V5 -->|+5V VIN| TFFR
+  V5 -->|+5V VIN| TFSD
   V5 --> C5
 
   ESP -->|3.3V from onboard reg| IMU
-  ESP -->|3.3V from onboard reg| ASL
-  ESP -->|3.3V from onboard reg| ASR
+  ESP -->|3.3V from onboard reg| AS5600L
+  ESP -->|3.3V from onboard reg| AS5600R
 
   %% =========================
   %% STAR GROUND
@@ -136,16 +139,17 @@ flowchart LR
   OPMV -->|GND| SG
   SERVO -->|GND| SG
   IMU -->|GND| SG
-  ASL -->|GND| SG
-  ASR -->|GND| SG
-  TFF -->|GND| SG
+  AS5600L -->|GND| SG
+  AS5600R -->|GND| SG
+  TFFR -->|GND| SG
+  TFSD -->|GND| SG
   ESTOP -.to GND when pressed.- SG
   LED -->|Cathode / GND| SG
 ```
 
 ## Notes
 - Do not route motor power through a breadboard.
-- Keep I2C and SPI wiring short and away from motor power lines.
-- TFMini-S front sensor **requires 5 V** — do not power from 3.3 V.
+- Keep I2C wiring short and away from motor power lines.
+- The VL53L1X address-remap dance happens once at boot in `vl53l1x_dual.h` — XSHUTs are held LOW until the firmware is ready to bring each sensor up.
 - OpenMV camera UART is ASCII v3 (`RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n`). Spec: [`docs/WRO_OpenMV_UART_Protocol.md`](../docs/WRO_OpenMV_UART_Protocol.md).
-- The rendered `WRO_Full_System_Diagram.png` / `.svg` in this folder are **stale v11 renders** — regenerate from this `.md`/`.mmd` after merge.
+- The rendered `WRO_Full_System_Diagram.png` / `.svg` in this folder are **stale renders from earlier revisions** — regenerate from this `.md`/`.mmd` when the bench wiring is finalized.
