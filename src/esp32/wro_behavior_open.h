@@ -2,8 +2,10 @@
 /*
  * Open Challenge behavior — heading-hold using IMU yaw target.
  *
- * Without a side TFMini-S, true wall-following isn't possible (camera blob
- * width is too noisy under harsh lighting). Strategy:
+ * In v13, with a side VL53L1X wired by default (HAS_SIDE_TOF=1), the side
+ * distance is mixed into the steering correction — see WALL_KP. When the
+ * side sensor is missing or out-of-range, behavior degrades to pure
+ * heading-hold. Strategy:
  *   - After each corner exit, snap target heading to nearest 90° quadrant.
  *   - Drive straight using a heading-error PID on the steering servo.
  *   - Speed: OPEN_MAX_PWM, ramped via speed_ramp.

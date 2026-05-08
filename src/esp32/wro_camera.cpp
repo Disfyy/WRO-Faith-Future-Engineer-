@@ -1,9 +1,9 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_camera.h"
 
 CameraData g_cam = {};
@@ -112,4 +112,4 @@ void cam_update() {
   g_cam.online = (g_cam.lastValidMs != 0) && (sinceValid <= CAM_SILENT_DEGRADE_MS);
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

@@ -80,61 +80,54 @@ flowchart LR
     MOT -. "Noise Filter" .- CM
   end
 
-  subgraph I2CBUS [4. I2C - IMU only]
+  subgraph I2C0 [4. I2C0 Wire - IMU + AS5600 L + VL53L1X Front]
     direction TB
     IMU[ICM-20948 @ 0x68]:::sensor
-    PULLUP[4.7k Pull-ups]:::gnd
+    AS5600L[AS5600 Left @ 0x36]:::sensor
+    TFFR[VL53L1X Front 0x29 -> 0x30]:::sensor
+    PULL0[4.7k Pull-ups]:::gnd
 
-    STAR_I2C(((STAR GND))):::star
+    STAR_I2C0(((STAR GND))):::star
 
-    ESP -- "+3.3V (onboard reg)" --> PULLUP
-    ESP -- "GPIO8 SDA, GPIO9 SCL" --> PULLUP
-    PULLUP -- "SDA, SCL" --> IMU
+    ESP -- "+3.3V onboard reg" --> PULL0
+    ESP -- "GPIO8 SDA, GPIO9 SCL" --> PULL0
+    PULL0 -- "SDA, SCL" --> IMU
+    PULL0 -- "SDA, SCL" --> AS5600L
+    PULL0 -- "SDA, SCL" --> TFFR
 
-    ESP -- "+3.3V -> VCC, AD0->GND" --> IMU
-    STAR_I2C -- "GND" --> IMU
+    ESP -- "+3.3V VCC, AD0->GND" --> IMU
+    ESP -- "+3.3V VCC" --> AS5600L
+    V5  -- "+5V VIN" --> TFFR
+    ESP -- "GPIO15 XSHUT (HIGH after boot remap)" --> TFFR
+
+    STAR_I2C0 -- "GND" --> IMU
+    STAR_I2C0 -- "GND" --> AS5600L
+    STAR_I2C0 -- "GND" --> TFFR
   end
 
-  subgraph SPIBUS [5. SPI HSPI - 2x AS5048A 14-bit]
+  subgraph I2C1 [5. I2C1 Wire1 - AS5600 R + VL53L1X Side]
     direction TB
-    ASL[AS5048A Left CS=GPIO10]:::sensor
-    ASR[AS5048A Right CS=GPIO14]:::sensor
+    AS5600R[AS5600 Right @ 0x36]:::sensor
+    TFSD[VL53L1X Side 0x29 -> 0x31]:::sensor
+    PULL1[4.7k Pull-ups]:::gnd
 
-    STAR_SPI(((STAR GND))):::star
+    STAR_I2C1(((STAR GND))):::star
 
-    ESP -- "GPIO11 MOSI tied to 3V3" --> ASL
-    ESP -- "GPIO12 SCK" --> ASL
-    ESP -- "GPIO13 MISO" --> ASL
-    ESP -- "GPIO10 CS" --> ASL
-    ESP -- "+3.3V" --> ASL
-    STAR_SPI -- "GND" --> ASL
+    ESP -- "+3.3V onboard reg" --> PULL1
+    ESP -- "GPIO11 SDA, GPIO12 SCL" --> PULL1
+    PULL1 -- "SDA, SCL" --> AS5600R
+    PULL1 -- "SDA, SCL" --> TFSD
 
-    ESP -- "shared MOSI/SCK/MISO" --> ASR
-    ESP -- "GPIO14 CS" --> ASR
-    ESP -- "+3.3V" --> ASR
-    STAR_SPI -- "GND" --> ASR
-  end
+    ESP -- "+3.3V VCC" --> AS5600R
+    V5  -- "+5V VIN" --> TFSD
+    ESP -- "GPIO16 XSHUT (HIGH after boot remap)" --> TFSD
 
-  subgraph UARTBLK [6. UART distance and camera]
-    direction TB
-    TFF[TFMini-S Front 12m]:::sensor
-    TFS[TFMini-S Side optional]:::sensor
-
-    STAR_UART(((STAR GND))):::star
-
-    V5 -- "+5V REQUIRED" --> TFF
-    STAR_UART -- "GND" --> TFF
-    ESP -- "UART1 GPIO15 RX <- TX" --> TFF
-    ESP -- "UART1 GPIO16 TX -> RX" --> TFF
-
-    V5 -. "+5V if wired" .-> TFS
-    STAR_UART -. "GND if wired" .-> TFS
-    ESP -. "UART SW GPIO47 RX" .-> TFS
+    STAR_I2C1 -- "GND" --> AS5600R
+    STAR_I2C1 -- "GND" --> TFSD
   end
 
   %% Connect the Star Grounds (single physical point)
   STAR_PWR ===|ALL STAR GROUNDS CONNECT TO ONE POINT| STAR_BRAIN
   STAR_BRAIN === STAR_DRIVE
-  STAR_DRIVE === STAR_I2C
-  STAR_I2C === STAR_SPI
-  STAR_SPI === STAR_UART
+  STAR_DRIVE === STAR_I2C0
+  STAR_I2C0 === STAR_I2C1

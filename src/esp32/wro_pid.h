@@ -8,7 +8,7 @@
  *   - Output clamp (symmetric)
  *   - Reset clears integral, derivative state, prev error
  *
- * Team Faith | WRO Future Engineers 2026 | v12.0
+ * Team Faith | WRO Future Engineers 2026 | v13.0
  */
 
 struct PidState {

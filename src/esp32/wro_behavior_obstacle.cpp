@@ -1,8 +1,8 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Arduino.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_pid.h"
 #include "wro_behavior_obstacle.h"
 
@@ -123,4 +123,4 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
   return brakeNow;
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

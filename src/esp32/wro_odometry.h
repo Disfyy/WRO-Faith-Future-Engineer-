@@ -1,10 +1,10 @@
 #pragma once
 /*
- * Odometry — wraps the AS5048A driver, handles 14-bit roll-over,
+ * Odometry — wraps the AS5600 dual-I2C driver, handles 12-bit roll-over,
  * accumulates signed tick distance, computes instantaneous speed.
  *
  * Sign convention: forward driving increases the accumulator.
- * If a wheel mounts mirrored, flip ENC_LEFT_INVERT / ENC_RIGHT_INVERT below.
+ * If a wheel mounts mirrored, flip ENC_LEFT_SIGN / ENC_RIGHT_SIGN in the .cpp.
  *
  * Exports:
  *   g_dist_left_ticks  / g_dist_right_ticks  — signed accumulators

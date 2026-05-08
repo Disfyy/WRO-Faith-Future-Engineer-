@@ -38,22 +38,19 @@ flowchart LR
     CM[3x 0.1uF Motor EMI]:::gnd
   end
 
-  subgraph I2CBUS [4. I2C - IMU only]
+  subgraph I2C0BUS [4. I2C0 Wire - GPIO 8/9]
     direction TB
     IMU[ICM-20948 0x68]:::sensor
-    PULLUP[4.7k Pull-ups]:::gnd
+    AS5600L[AS5600 Left 0x36]:::sensor
+    TFFR[VL53L1X Front 0x30 XSHUT GPIO15]:::sensor
+    PULL0[4.7k Pull-ups]:::gnd
   end
 
-  subgraph SPIBUS [5. SPI HSPI - 2x AS5048A 14-bit]
+  subgraph I2C1BUS [5. I2C1 Wire1 - GPIO 11/12]
     direction TB
-    ASL[AS5048A Left  CS=GPIO10]:::sensor
-    ASR[AS5048A Right CS=GPIO14]:::sensor
-  end
-
-  subgraph UARTBLK [6. UART distance + camera]
-    direction TB
-    TFF[TFMini-S Front UART1 12m]:::sensor
-    TFS[TFMini-S Side UART SW GPIO47 optional]:::sensor
+    AS5600R[AS5600 Right 0x36]:::sensor
+    TFSD[VL53L1X Side 0x31 XSHUT GPIO16]:::sensor
+    PULL1[4.7k Pull-ups]:::gnd
   end
 
   %% Power Routing
@@ -61,13 +58,15 @@ flowchart LR
   V5 -- "+5V -> VIN" --> OMV
   V5 -- "+5V (Red)" --> SRV
   V5 -- "+5V -> VCC" --> BTS
-  V5 -- "+5V REQUIRED" --> TFF
+  V5 -- "+5V -> VIN" --> TFFR
+  V5 -- "+5V -> VIN" --> TFSD
   SW -- "+VBAT -> B+" --> BTS
 
-  ESP -- "+3.3V onboard reg" --> PULLUP
+  ESP -- "+3.3V onboard reg" --> PULL0
+  ESP -- "+3.3V onboard reg" --> PULL1
   ESP -- "+3.3V -> VCC" --> IMU
-  ESP -- "+3.3V -> VCC" --> ASL
-  ESP -- "+3.3V -> VCC" --> ASR
+  ESP -- "+3.3V -> VCC" --> AS5600L
+  ESP -- "+3.3V -> VCC" --> AS5600R
 
   %% Signal Routing
   ESP -- "GPIO17 (RX) <- TX" --> OMV
@@ -82,14 +81,18 @@ flowchart LR
   BTS -. "Logic Filter" .- C104_BTS
   ESP -- "GPIO42 PWM" --> SRV
 
-  ESP -- "GPIO8 SDA, GPIO9 SCL" --> PULLUP
-  PULLUP -- "SDA, SCL" --> IMU
+  %% I2C0
+  ESP -- "GPIO8 SDA, GPIO9 SCL" --> PULL0
+  PULL0 -- "SDA, SCL" --> IMU
+  PULL0 -- "SDA, SCL" --> AS5600L
+  PULL0 -- "SDA, SCL" --> TFFR
+  ESP -- "GPIO15 XSHUT" --> TFFR
 
-  ESP -- "HSPI: GPIO11 MOSI tied 3V3, GPIO12 SCK, GPIO13 MISO" --> ASL
-  ESP -- "HSPI shared bus" --> ASR
-
-  ESP -- "UART1: GPIO15 RX, GPIO16 TX (115200)" --> TFF
-  ESP -. "UART SW: GPIO47 RX (optional)" .-> TFS
+  %% I2C1
+  ESP -- "GPIO11 SDA, GPIO12 SCL" --> PULL1
+  PULL1 -- "SDA, SCL" --> AS5600R
+  PULL1 -- "SDA, SCL" --> TFSD
+  ESP -- "GPIO16 XSHUT" --> TFSD
 
   %% STAR GROUND ROUTING
   STAR_GND(((STAR GND\nCenter Point))):::star
@@ -103,6 +106,7 @@ flowchart LR
   STAR_GND -- "Cathode" --> LED
   STAR_GND -- "GND" --> ESTOP
   STAR_GND -- "GND" --> IMU
-  STAR_GND -- "GND" --> ASL
-  STAR_GND -- "GND" --> ASR
-  STAR_GND -- "GND" --> TFF
+  STAR_GND -- "GND" --> AS5600L
+  STAR_GND -- "GND" --> AS5600R
+  STAR_GND -- "GND" --> TFFR
+  STAR_GND -- "GND" --> TFSD

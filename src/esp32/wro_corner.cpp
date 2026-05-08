@@ -1,8 +1,8 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 #include <Arduino.h>
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_pid.h"
 #include "wro_corner.h"
 
@@ -40,6 +40,7 @@ bool corner_failed()  { return g_corner_state == CN_FAIL; }
 
 void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned long now) {
   // Frames where the front sensor is unreliable can NOT trigger a turn.
+  // (tf_front_mm comes from wro_sensors which now wraps VL53L1X in v13.)
   bool framePresent = tf_front_ok && tf_front_mm > 0 && tf_front_mm < 9999;
   if (framePresent) lastTfMm = tf_front_mm;
 
@@ -134,4 +135,4 @@ void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned lo
   // we do NOT clear it here so a single update is observable for one tick.
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

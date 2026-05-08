@@ -1,26 +1,31 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
 
 /*
- * WRO Future Engineers — v12 Main Firmware (clean rewrite)
+ * WRO Future Engineers — v13 Main Firmware
  *
- * Hardware: ESP32-S3-DevKitC-1 N8R8 + AS5048A SPI encoders +
- *           TFMini-S front (UART1) + ICM-20948 IMU (I2C) +
+ * Hardware: ESP32-S3-DevKitC-1 N8R8 + 2× AS5600 (dual I2C) +
+ *           VL53L1X front + side (XSHUT remap) + ICM-20948 IMU (I2C0) +
  *           OpenMV H7 Plus (UART2) + BTS7960 motor + JX PDI-6221MG servo.
  *
+ * v13 keeps the v12 architecture intact — only the bottom HAL layer changed.
+ * The TCA9548A I2C mux is GONE (it burned out); two AS5600s now sit on the
+ * ESP32-S3's two native I2C peripherals (Wire and Wire1), and the VL53L1X
+ * pair uses XSHUT-based address remapping at boot.
+ *
  * Layered architecture (top-down only):
- *   HAL: drivers (as5048a_spi.h, tfmini_s.h, ICM20948 lib)
+ *   HAL: drivers (as5600_dual_i2c.h, vl53l1x_dual.h, ICM20948 lib)
  *   Estimation: wro_imu, wro_odometry, wro_camera
  *   Behavior: wro_corner, wro_behavior_open, wro_behavior_obstacle, wro_park
  *   Control: this file (steering_mixer + speed_ramp)
  *   FSM: wro_race_fsm + wro_estop (parallel)
  *
- * Mode is a single compile-time #define in wro_config_v12.h:
+ * Mode is a single compile-time #define in wro_config_v13.h:
  *   OBSTACLE_MODE 0 = Open Challenge   (3 laps, walls only)
  *   OBSTACLE_MODE 1 = Obstacle Challenge (red/green pillars + parking)
  * (Rule 9.9 compliance: NO physical mode switches.)
  *
- * Team Faith | WRO Future Engineers 2026 | v12.0
+ * Team Faith | WRO Future Engineers 2026 | v13.0
  */
 
 #include <Arduino.h>
@@ -28,7 +33,7 @@
 #include <WiFi.h>
 #include <esp_bt.h>
 
-#include "wro_config_v12.h"
+#include "wro_config_v13.h"
 #include "wro_imu.h"
 #include "wro_odometry.h"
 #include "wro_camera.h"
@@ -88,7 +93,7 @@ void setup() {
   delay(200);
   Serial.println();
   Serial.println("============================================================");
-  Serial.println(" WRO FE 2026 — Team Faith — v12.0 main firmware");
+  Serial.println(" WRO FE 2026 — Team Faith — v13.0 main firmware");
   Serial.print  (" Mode: ");
 #if OBSTACLE_MODE == 1
   Serial.println("OBSTACLE CHALLENGE");
@@ -120,14 +125,14 @@ void setup() {
   steeringServo.attach(SERVO_PIN, SERVO_LEFT_US, SERVO_RIGHT_US);
   writeSteeringUs(SERVO_CENTER_US);
 
-  // ─── Encoders ───────────────────────────────────────────────
+  // ─── Encoders (AS5600 dual I2C) ─────────────────────────────
   if (!odo_init()) {
-    Serial.println("ERROR: AS5048A init failed");
+    Serial.println("ERROR: AS5600 init failed (check both I2C buses)");
   } else {
-    Serial.println("AS5048A SPI: OK");
+    Serial.println("AS5600 dual I2C: OK");
   }
 
-  // ─── TFMini-S front (UART1, owned by wro_sensors) ──────────
+  // ─── VL53L1X distance sensors (owned by wro_sensors) ───────
   sens_init();
 
   // ─── Camera (UART2) ─────────────────────────────────────────
@@ -184,4 +189,4 @@ void loop() {
                       commandSpeed, g_cmd_steer_us);
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V12_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
