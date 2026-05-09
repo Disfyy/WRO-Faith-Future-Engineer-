@@ -1,13 +1,11 @@
 # WRO Servo Calibration Guide
 
 **Servo:** JX PDI-6221MG
-**MCU:** ESP32-S3-DevKitC-1 N8R8 (v12 hardware — was ESP32 DevKitC V4 on v11)
-**Pin:** GPIO 42 (v12) — was GPIO 27 (v11)
-**Firmware:** `src/esp32/legacy_test_servo_calibrate.cpp` ⚠️ **needs v12 port** — currently hardcodes GPIO 27. Two options for v12:
-  - **(a)** Edit the file to `#include "wro_hw_config_v12.h"` and remove the local `constexpr int SERVO_PIN = 27;`, then run target 7.
-  - **(b)** Run target 10 (`bench_test_v12.cpp`) which already drives the servo on GPIO 42; transcribe the µs values manually from the serial output.
+**MCU:** ESP32-S3-DevKitC-1 N8R8 (v13)
+**Pin:** GPIO 42
+**Firmware:** [`sketches/servo_calibrate/servo_calibrate.ino`](../sketches/servo_calibrate/servo_calibrate.ino) — standalone Arduino IDE sketch already wired to GPIO 42 with v13 calibration constants.
 
-**Build target:** `WRO_TARGET_TEST_SERVO_CAL` (7) — pending v12 port
+> The legacy `legacy_test_servo_calibrate.cpp` (build target 7) was the v11 calibration program on GPIO 27 and is kept as historical reference only. For v13 use the standalone sketch above, which has the same workflow with v13 hardware bindings.
 
 ---
 
@@ -56,13 +54,9 @@ trim later.
 
 ### Step 0: Flash the calibration firmware
 
-In `wro_build_target.h`, set:
+Open `sketches/servo_calibrate/servo_calibrate.ino` in the Arduino IDE and upload it as a standalone sketch. Open Serial Monitor at **115200 baud** with "Newline" line ending.
 
-```cpp
-#define WRO_ACTIVE_TARGET WRO_TARGET_TEST_SERVO_CAL
-```
-
-Upload. Open Serial Monitor at **115200 baud**, with "Newline" line ending.
+(The sketch is independent of `wro_build_target.h`; it doesn't pull in the rest of the firmware.)
 
 ### Step 1: Find true centre
 
@@ -127,7 +121,7 @@ Type **`p`**. You'll see output like:
 ║  Range right: +455 µs from centre
 ║  Range left:  -445 µs from centre
 ╠══════════════════════════════════════╣
-║  Copy these into wro_hw_config_v12.h (v12) or legacy_eps323.cpp (v11 reference):
+║  Copy these into wro_hw_config_v13.h:
 ║
 ║  #define SERVO_CENTER_US   1485
 ║  #define SERVO_RIGHT_US    1940
@@ -144,9 +138,7 @@ Type **`p`**. You'll see output like:
 
 ## Applying calibration to the main firmware
 
-After calibration on v12, update the µs constants in `src/esp32/wro_hw_config_v12.h` (`SERVO_CENTER_US`, `SERVO_LEFT_US`, `SERVO_RIGHT_US`). For v11 reference, update `src/esp32/legacy_eps323.cpp` section 5 (SERVO AND
-SPEEDS) with microsecond constants and switch `setSteering()` from
-`write()` to `writeMicroseconds()`.
+After calibration, update the µs constants in `src/esp32/wro_hw_config_v13.h` (`SERVO_CENTER_US`, `SERVO_LEFT_US`, `SERVO_RIGHT_US`). The v13 firmware already drives the servo with `writeMicroseconds()` via the `writeSteeringUs()` helper in `wro_v13_main.cpp`, so the only change is updating the three constants and reflashing.
 
 ### What to change
 
@@ -162,10 +154,10 @@ SPEEDS) with microsecond constants and switch `setSteering()` from
 **With microsecond constants from your calibration:**
 
 ```cpp
-// NEW — calibrated in µs (run target 7 once ported to v12, or read from target 10 bench output)
-#define SERVO_CENTER_US    1485   // ← your measured value
-#define SERVO_RIGHT_US     1940   // ← your measured value
-#define SERVO_LEFT_US      1040   // ← your measured value
+// NEW — calibrated in µs (run sketches/servo_calibrate, or read from bench_test_v13 target 10)
+#define SERVO_CENTER_US    1485   // <- your measured value
+#define SERVO_RIGHT_US     1940   // <- your measured value
+#define SERVO_LEFT_US      1040   // <- your measured value
 ```
 
 **Update `setSteering()` to work in microseconds:**
@@ -233,7 +225,7 @@ its effect during a race:
 | Centre drifts over time | Servo horn slipping on splines | Tighten horn screw. Use thread-lock (blue Loctite) on the screw. |
 | Loud buzzing at extreme angles | Linkage hitting a hard stop while the servo tries to push further | Reduce `SERVO_RIGHT_US` / `SERVO_LEFT_US` by 20–50 µs to stay inside the mechanical range. |
 | Asymmetric range (right > left or vice versa) | Horn installed one spline tooth off centre | Remove horn, re-seat at 1500 µs, re-calibrate. |
-| `setSteering()` has no effect | Servo not attached, wrong pin, or timer conflict with motor PWM | Verify `steeringServo.attach(27, 500, 2500)` is called. ESP32Servo and `ledcSetup` can conflict if they use the same timer — servo defaults to timer 0, motor should use timers 1+. |
+| `setSteering()` has no effect | Servo not attached, wrong pin, or timer conflict with motor PWM | Verify `steeringServo.attach(SERVO_PIN, SERVO_LEFT_US, SERVO_RIGHT_US)` is called with `SERVO_PIN = 42` for v13. ESP32Servo and `ledcAttach` can conflict if they use the same timer — servo defaults to timer 0, motor PWM should use other timers. |
 
 ---
 

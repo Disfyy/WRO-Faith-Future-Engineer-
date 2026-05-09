@@ -1,48 +1,51 @@
 // =====================================================================
-//  WRO — Калибровка сервопривода рулевого
+//  WRO v13 — Steering servo calibration
 // =====================================================================
 //
-//  ЗАЧЕМ: Сервопривод не всегда центрируется ровно на 90°. Этот скетч
-//  помогает найти ТОЧНОЕ значение в микросекундах для:
-//    - центра (колёса прямо)
-//    - максимального ЛЕВОГО упора
-//    - максимального ПРАВОГО упора
+//  Why: the servo's mechanical center rarely lines up perfectly with
+//  1500 us. This sketch walks you through finding the exact microsecond
+//  values for:
+//    - center (wheels straight)
+//    - max LEFT lock
+//    - max RIGHT lock
 //
-//  ПОДГОТОВКА:
-//    1. Подними шасси, чтобы колёса крутились свободно
-//    2. Залей этот скетч
-//    3. Открой Serial Monitor 115200 baud
+//  Setup:
+//    1. Lift the chassis so the wheels can turn freely.
+//    2. Upload this sketch.
+//    3. Open Serial Monitor at 115200 baud.
 //
-//  ПОШАГОВАЯ ИНСТРУКЦИЯ:
-//    Шаг 1. Команда `c` — серво на старте 1500мкс. Посмотри на колёса.
-//    Шаг 2. Подкручивай `+` (+5мкс) или `-` (-5мкс) пока колёса не будут
-//           ИДЕАЛЬНО ПРЯМО. Используй `>` (+50) и `<` (-50) для крупных шагов.
-//    Шаг 3. Когда колёса прямо — нажми `C` чтобы сохранить ЦЕНТР.
-//    Шаг 4. Кручи `+` пока колёса не упрутся вправо до упора.
-//           Нажми `R` — сохранится МАКСИМАЛЬНЫЙ ПРАВЫЙ.
-//    Шаг 5. Кручи `-` пока колёса не упрутся влево до упора.
-//           Нажми `L` — сохранится МАКСИМАЛЬНЫЙ ЛЕВЫЙ.
-//    Шаг 6. Нажми `p` — увидишь итоговые значения для копирования в код.
+//  Procedure:
+//    Step 1. Send `c` -- servo starts at 1500 us. Check the wheels.
+//    Step 2. Use `+` (+5 us) / `-` (-5 us) for fine adjustment, or
+//            `>` (+50 us) / `<` (-50 us) for coarse, until the wheels
+//            point PERFECTLY STRAIGHT.
+//    Step 3. When straight, press `C` to save as CENTER.
+//    Step 4. Crank `+` until the wheels hit the right end-stop. Press
+//            `R` to save as MAX RIGHT.
+//    Step 5. Crank `-` until the wheels hit the left end-stop. Press
+//            `L` to save as MAX LEFT.
+//    Step 6. Press `p` for the summary you can paste into the firmware.
 //
-//  ВАЖНО: Не оставляй серво в упоре долго — он перегревается!
-//  Если жужжит на упоре — отступи на 50мкс назад.
+//  Important: do NOT leave the servo pinned against an end-stop -- it
+//  overheats. If it buzzes at the limit, back off ~50 us.
 //
-//  КОМАНДЫ:
-//    +/-       Точная подстройка (±5 мкс)
-//    >/<       Грубая (±50 мкс)
-//    c         Показать текущее значение
-//    1500      Установить конкретное значение (просто число)
-//    sweep     Плавный обход: центр→правый→центр→левый→центр
-//    C         Сохранить как ЦЕНТР
-//    R         Сохранить как МАКС ПРАВЫЙ
-//    L         Сохранить как МАКС ЛЕВЫЙ
-//    p         Показать сводку калибровки
-//    h         Помощь
+//  Commands:
+//    +/-       fine step (+/- 5 us)
+//    >/<       coarse step (+/- 50 us)
+//    c         show current value
+//    1500      jump to a literal value (any 4-digit number 500..2500)
+//    sweep     smooth sweep: center -> right -> center -> left -> center
+//    C         save current as CENTER
+//    R         save current as MAX RIGHT
+//    L         save current as MAX LEFT
+//    p         print calibration summary
+//    h         help
 // =====================================================================
 
 #include <ESP32Servo.h>
 
-#define SERVO_PIN     27
+// v13: steering servo on GPIO 42 (was GPIO 27 on v11 hardware)
+#define SERVO_PIN     42
 #define SERVO_MIN_US  500
 #define SERVO_MAX_US  2500
 
@@ -60,9 +63,9 @@ void setUS(int us) {
 }
 
 void printPos() {
-  Serial.print("  >> серво = ");
+  Serial.print("  >> servo = ");
   Serial.print(currentUS);
-  Serial.println(" мкс");
+  Serial.println(" us");
 }
 
 void smoothMove(int from, int to) {
@@ -79,73 +82,73 @@ void runSweep() {
   int r = calRight  > 0 ? calRight  : 2000;
   int l = calLeft   > 0 ? calLeft   : 1000;
 
-  Serial.println("\n--- ПЛАВНЫЙ ОБХОД ---");
-  Serial.print("  центр("); Serial.print(c); Serial.println(")...");
+  Serial.println("\n--- SWEEP ---");
+  Serial.print("  center("); Serial.print(c); Serial.println(")...");
   smoothMove(currentUS, c);  delay(500);
-  Serial.print("  правый("); Serial.print(r); Serial.println(")...");
+  Serial.print("  right(");  Serial.print(r); Serial.println(")...");
   smoothMove(c, r);          delay(500);
-  Serial.print("  центр...");
+  Serial.print("  center..."); Serial.println();
   smoothMove(r, c);          delay(500);
-  Serial.print("\n  левый("); Serial.print(l); Serial.println(")...");
+  Serial.print("  left(");   Serial.print(l); Serial.println(")...");
   smoothMove(c, l);          delay(500);
-  Serial.print("  центр...\n");
+  Serial.println("  center...");
   smoothMove(l, c);
-  Serial.println("--- ОБХОД ОКОНЧЕН ---\n");
+  Serial.println("--- SWEEP DONE ---\n");
 }
 
 void printHelp() {
-  Serial.println("\n┌─── КОМАНДЫ ────────────────────────────┐");
-  Serial.println("│ +/-      ±5 мкс (точная подстройка)    │");
-  Serial.println("│ >/<      ±50 мкс (грубая)              │");
-  Serial.println("│ c        Показать текущее              │");
-  Serial.println("│ 1500     Установить конкретное число   │");
-  Serial.println("│ sweep    Плавный обход (центр→Л→Ц→П→Ц) │");
-  Serial.println("│ C        Сохранить как ЦЕНТР           │");
-  Serial.println("│ R        Сохранить как МАКС ПРАВЫЙ     │");
-  Serial.println("│ L        Сохранить как МАКС ЛЕВЫЙ      │");
-  Serial.println("│ p        Показать сводку               │");
-  Serial.println("│ h        Эта помощь                    │");
-  Serial.println("└────────────────────────────────────────┘\n");
+  Serial.println("\n+--- COMMANDS -----------------------------+");
+  Serial.println("| +/-      +/- 5 us  (fine)                |");
+  Serial.println("| >/<      +/- 50 us (coarse)              |");
+  Serial.println("| c        show current                    |");
+  Serial.println("| 1500     jump to literal value           |");
+  Serial.println("| sweep    smooth sweep C->L->C->R->C      |");
+  Serial.println("| C        save as CENTER                  |");
+  Serial.println("| R        save as MAX RIGHT               |");
+  Serial.println("| L        save as MAX LEFT                |");
+  Serial.println("| p        print summary                   |");
+  Serial.println("| h        this help                       |");
+  Serial.println("+------------------------------------------+\n");
 }
 
 void printSummary() {
-  Serial.println("\n╔══════════════════════════════════════╗");
-  Serial.println("║      СВОДКА КАЛИБРОВКИ               ║");
-  Serial.println("╠══════════════════════════════════════╣");
+  Serial.println("\n+======================================+");
+  Serial.println("|       CALIBRATION SUMMARY            |");
+  Serial.println("+======================================+");
 
-  Serial.print("║  ЦЕНТР:       ");
-  if (calCenter > 0) { Serial.print(calCenter); Serial.println(" мкс"); }
-  else { Serial.println("(не установлен)"); }
+  Serial.print("|  CENTER:     ");
+  if (calCenter > 0) { Serial.print(calCenter); Serial.println(" us"); }
+  else { Serial.println("(not set)"); }
 
-  Serial.print("║  МАКС ПРАВЫЙ: ");
-  if (calRight > 0) { Serial.print(calRight); Serial.println(" мкс"); }
-  else { Serial.println("(не установлен)"); }
+  Serial.print("|  MAX RIGHT:  ");
+  if (calRight > 0) { Serial.print(calRight); Serial.println(" us"); }
+  else { Serial.println("(not set)"); }
 
-  Serial.print("║  МАКС ЛЕВЫЙ:  ");
-  if (calLeft > 0) { Serial.print(calLeft); Serial.println(" мкс"); }
-  else { Serial.println("(не установлен)"); }
+  Serial.print("|  MAX LEFT:   ");
+  if (calLeft > 0) { Serial.print(calLeft); Serial.println(" us"); }
+  else { Serial.println("(not set)"); }
 
   if (calCenter > 0 && calRight > 0 && calLeft > 0) {
     int rangeR = calRight - calCenter;
     int rangeL = calCenter - calLeft;
 
-    Serial.println("╠══════════════════════════════════════╣");
-    Serial.print("║  Ход вправо: +"); Serial.print(rangeR); Serial.println(" мкс");
-    Serial.print("║  Ход влево:  -"); Serial.print(rangeL); Serial.println(" мкс");
+    Serial.println("+======================================+");
+    Serial.print("|  Right travel: +"); Serial.print(rangeR); Serial.println(" us");
+    Serial.print("|  Left  travel: -"); Serial.print(rangeL); Serial.println(" us");
 
     if (abs(rangeR - rangeL) > 50) {
-      Serial.println("║  Несимметрично! Возьми меньший ход.");
+      Serial.println("|  Asymmetric! Use the smaller travel.");
     }
 
-    Serial.println("╠══════════════════════════════════════╣");
-    Serial.println("║  Скопируй в eps323.cpp:              ║");
-    Serial.println("║                                      ║");
-    Serial.print("║  #define SERVO_CENTER_US  "); Serial.println(calCenter);
-    Serial.print("║  #define SERVO_RIGHT_US   "); Serial.println(calRight);
-    Serial.print("║  #define SERVO_LEFT_US    "); Serial.println(calLeft);
+    Serial.println("+======================================+");
+    Serial.println("|  Paste into wro_hw_config_v13.h:     |");
+    Serial.println("|                                      |");
+    Serial.print("|  #define SERVO_CENTER_US  "); Serial.println(calCenter);
+    Serial.print("|  #define SERVO_RIGHT_US   "); Serial.println(calRight);
+    Serial.print("|  #define SERVO_LEFT_US    "); Serial.println(calLeft);
   }
 
-  Serial.println("╚══════════════════════════════════════╝\n");
+  Serial.println("+======================================+\n");
 }
 
 void setup() {
@@ -156,28 +159,28 @@ void setup() {
   setUS(1500);
 
   Serial.println("\n\n");
-  Serial.println("╔══════════════════════════════════════════╗");
-  Serial.println("║  WRO — КАЛИБРОВКА СЕРВОПРИВОДА           ║");
-  Serial.println("║  JX PDI-6221MG на GPIO 27                ║");
-  Serial.println("║  Старт: 1500 мкс                         ║");
-  Serial.println("╚══════════════════════════════════════════╝\n");
+  Serial.println("+==========================================+");
+  Serial.println("|  WRO v13 -- STEERING SERVO CALIBRATION   |");
+  Serial.println("|  JX PDI-6221MG on GPIO 42                |");
+  Serial.println("|  Start: 1500 us                          |");
+  Serial.println("+==========================================+\n");
 
-  Serial.println("ШАГ 1. Подними шасси, чтобы колёса крутились свободно.");
-  Serial.println("ШАГ 2. Подкручивай '+' / '-' пока колёса не будут ПРЯМО.");
-  Serial.println("ШАГ 3. Нажми 'C' — сохранить ЦЕНТР.");
-  Serial.println("ШАГ 4. Кручи '+' до правого упора, нажми 'R'.");
-  Serial.println("ШАГ 5. Кручи '-' до левого упора, нажми 'L'.");
-  Serial.println("ШАГ 6. Нажми 'p' — получишь итоговые цифры.\n");
+  Serial.println("STEP 1. Lift the chassis so the wheels turn freely.");
+  Serial.println("STEP 2. Use '+' / '-' until wheels point STRAIGHT.");
+  Serial.println("STEP 3. Press 'C' to save CENTER.");
+  Serial.println("STEP 4. Crank '+' to the right end-stop, press 'R'.");
+  Serial.println("STEP 5. Crank '-' to the left end-stop, press 'L'.");
+  Serial.println("STEP 6. Press 'p' for the final values.\n");
 
   printHelp();
-  Serial.println("Готов. Текущее: 1500 мкс");
+  Serial.println("Ready. Current: 1500 us");
 }
 
 void handleCommand(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return;
 
-  // Если просто число — установить значение
+  // If purely digits -> jump to that value
   bool allDigits = true;
   for (size_t i = 0; i < cmd.length(); i++) {
     if (!isDigit(cmd[i])) { allDigits = false; break; }
@@ -188,17 +191,17 @@ void handleCommand(String cmd) {
       setUS(v);
       printPos();
     } else {
-      Serial.print("  Диапазон 500–2500. Ты ввёл: ");
+      Serial.print("  Range is 500..2500. You entered: ");
       Serial.println(v);
     }
     return;
   }
 
-  // Длинные команды
+  // Multi-char commands
   if (cmd == "sweep") { runSweep(); return; }
   if (cmd == "h" || cmd == "help") { printHelp(); return; }
 
-  // Однобуквенные
+  // Single-char commands
   char ch = cmd[0];
   switch (ch) {
     case '+': setUS(currentUS + 5);   printPos(); break;
@@ -209,20 +212,20 @@ void handleCommand(String cmd) {
 
     case 'C':
       calCenter = currentUS;
-      Serial.print("\n  *** ЦЕНТР сохранён: ");
-      Serial.print(calCenter); Serial.println(" мкс ***\n");
+      Serial.print("\n  *** CENTER saved: ");
+      Serial.print(calCenter); Serial.println(" us ***\n");
       break;
 
     case 'R':
       calRight = currentUS;
-      Serial.print("\n  *** МАКС ПРАВЫЙ сохранён: ");
-      Serial.print(calRight); Serial.println(" мкс ***\n");
+      Serial.print("\n  *** MAX RIGHT saved: ");
+      Serial.print(calRight); Serial.println(" us ***\n");
       break;
 
     case 'L':
       calLeft = currentUS;
-      Serial.print("\n  *** МАКС ЛЕВЫЙ сохранён: ");
-      Serial.print(calLeft); Serial.println(" мкс ***\n");
+      Serial.print("\n  *** MAX LEFT saved: ");
+      Serial.print(calLeft); Serial.println(" us ***\n");
       break;
 
     case 'p': case 'P':
@@ -230,9 +233,9 @@ void handleCommand(String cmd) {
       break;
 
     default:
-      Serial.print("  Неизвестная команда: ");
+      Serial.print("  Unknown command: ");
       Serial.println(cmd);
-      Serial.println("  Набери 'h' для справки");
+      Serial.println("  Type 'h' for help");
       break;
   }
 }

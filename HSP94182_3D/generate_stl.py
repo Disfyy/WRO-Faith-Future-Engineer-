@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-generate_stl.py — пакетная генерация STL-файлов из chassis.scad
+generate_stl.py -- batch STL generation from chassis.scad
 
-Назначение
-----------
-Команда WRO Future Engineers: запустите этот скрипт, чтобы из параметрической
-OpenSCAD-модели получить готовые STL-файлы — отдельно по каждой детали, готовые
-к 3D-печати или импорту в Cura / PrusaSlicer / Bambu Studio.
+Purpose
+-------
+WRO Future Engineers team helper: run this script to produce STL files from
+the parametric OpenSCAD model -- one per part, ready for 3D-printing or
+import into Cura / PrusaSlicer / Bambu Studio.
 
-Зависимости
------------
-• Python 3.8+
-• OpenSCAD (https://openscad.org/downloads.html) — устанавливается отдельно.
-  Скрипт автоматически найдёт его в стандартных путях для macOS / Linux / Windows.
+Dependencies
+------------
+- Python 3.8+
+- OpenSCAD (https://openscad.org/downloads.html) -- installed separately.
+  This script auto-locates the binary in the standard macOS / Linux / Windows paths.
 
-Использование
--------------
-    python3 generate_stl.py                # сгенерировать все детали (по умолчанию)
-    python3 generate_stl.py --list         # показать список деталей
+Usage
+-----
+    python3 generate_stl.py                # generate every part (default)
+    python3 generate_stl.py --list         # list available parts
     python3 generate_stl.py --part 01_chassis_plate
     python3 generate_stl.py --outdir ./stl_v2 --quality high
 """
@@ -36,77 +36,77 @@ SCAD_FILE = ROOT / "chassis.scad"
 DEFAULT_OUTDIR = ROOT / "stl"
 
 # ----------------------------------------------------------------------------
-# Список деталей: имя файла → вызов OpenSCAD-модуля
-# Можно расширять, добавляя любую деталь, определённую в chassis.scad.
+# Parts list: file name -> OpenSCAD module call.
+# Extend as needed by adding any module defined in chassis.scad.
 # ----------------------------------------------------------------------------
 PARTS: dict[str, dict] = {
     "00_full_assembly": {
         "call": "assemble();",
-        "desc": "Полная сборка шасси (для просмотра / референса)",
+        "desc": "Full chassis assembly (for visualization / reference)",
     },
     "01_chassis_plate": {
         "call": "chassis_plate();",
-        "desc": "Главная плита (печатать из ABS / PETG, 3-4 мм)",
+        "desc": "Main plate (print in ABS / PETG, 3-4 mm)",
     },
     "02_upper_deck": {
         "call": "upper_deck();",
-        "desc": "Верхняя T-образная дека",
+        "desc": "Upper T-shaped deck",
     },
     "03_shock_tower_front": {
         "call": "shock_tower(0);",
-        "desc": "Шок-башня (одинаковая спереди и сзади)",
+        "desc": "Shock tower (front and rear are identical)",
     },
     "04_lower_arm_left": {
         "call": "suspension_arm(length=55, w=12, side=-1);",
-        "desc": "Левый нижний рычаг подвески",
+        "desc": "Left lower suspension arm",
     },
     "04_lower_arm_right": {
         "call": "suspension_arm(length=55, w=12, side=1);",
-        "desc": "Правый нижний рычаг подвески",
+        "desc": "Right lower suspension arm",
     },
     "05_upper_arm_left": {
         "call": "suspension_arm(length=43, w=5, side=-1);",
-        "desc": "Левый верхний рычаг подвески",
+        "desc": "Left upper suspension arm",
     },
     "05_upper_arm_right": {
         "call": "suspension_arm(length=43, w=5, side=1);",
-        "desc": "Правый верхний рычаг подвески",
+        "desc": "Right upper suspension arm",
     },
     "06_steering_hub_left": {
         "call": "steering_hub(side=-1);",
-        "desc": "Левый поворотный кулак (передний)",
+        "desc": "Left steering hub (front)",
     },
     "06_steering_hub_right": {
         "call": "steering_hub(side=1);",
-        "desc": "Правый поворотный кулак (передний)",
+        "desc": "Right steering hub (front)",
     },
     "07_body_post": {
         "call": "body_post(56);",
-        "desc": "Кузовная стойка (4 шт)",
+        "desc": "Body post (4 needed)",
     },
     "08_foam_bumper": {
         "call": "foam_bumper();",
-        "desc": "Бампер с пеной (2 шт — перед/зад)",
+        "desc": "Foam bumper (2 needed -- front/rear)",
     },
     "09_antenna_mount": {
         "call": "antenna_mount();",
-        "desc": "Крепление антенны",
+        "desc": "Antenna mount",
     },
     "10_wheel": {
         "call": "wheel();",
-        "desc": "Колесо в сборе (для референса; печать импрактична)",
+        "desc": "Full wheel (reference only -- impractical to print)",
     },
     "11_battery_dummy": {
         "call": "battery();",
-        "desc": "Габаритный макет аккумулятора",
+        "desc": "Battery shape mockup",
     },
     "12_motor_dummy": {
         "call": "motor();",
-        "desc": "Габаритный макет мотора",
+        "desc": "Motor shape mockup",
     },
 }
 
-# Качество рендера → значение $fn в OpenSCAD
+# Render quality -> $fn value in OpenSCAD
 QUALITY_PRESETS = {
     "draft":  32,
     "normal": 64,
@@ -116,7 +116,7 @@ QUALITY_PRESETS = {
 
 
 def find_openscad() -> str | None:
-    """Ищет исполняемый файл OpenSCAD в стандартных путях."""
+    """Locate the OpenSCAD binary in standard system paths."""
     candidates = [
         "openscad",
         "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
@@ -136,8 +136,8 @@ def find_openscad() -> str | None:
 
 
 def render_part(scad_call: str, output_stl: Path, openscad_bin: str, fn_quality: int) -> tuple[bool, str]:
-    """Рендерит одну деталь во временный .scad → STL через OpenSCAD."""
-    wrapper = f"""// автогенерация — generate_stl.py
+    """Render one part: temp .scad -> STL via OpenSCAD."""
+    wrapper = f"""// auto-generated by generate_stl.py
 $fn = {fn_quality};
 use <{SCAD_FILE.as_posix()}>;
 {scad_call}
@@ -169,52 +169,52 @@ def fmt_size(n_bytes: int) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Генерация STL-файлов из параметрической модели chassis.scad",
+        description="Generate STL files from the parametric chassis.scad model",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--list", action="store_true", help="Показать список деталей и выйти")
+    parser.add_argument("--list", action="store_true", help="List available parts and exit")
     parser.add_argument("--part", action="append", default=None,
-                        help="Имя детали (можно несколько раз). По умолчанию — все.")
+                        help="Part name (repeatable). Default: all parts.")
     parser.add_argument("--outdir", default=str(DEFAULT_OUTDIR),
-                        help=f"Папка для STL (по умолчанию: {DEFAULT_OUTDIR})")
+                        help=f"STL output directory (default: {DEFAULT_OUTDIR})")
     parser.add_argument("--quality", choices=list(QUALITY_PRESETS), default="normal",
-                        help="Качество рендера ($fn): draft=32, normal=64, high=128, ultra=256")
+                        help="Render quality ($fn): draft=32, normal=64, high=128, ultra=256")
     parser.add_argument("--openscad", default=None,
-                        help="Путь к OpenSCAD (если не найден автоматически)")
+                        help="Path to OpenSCAD (override auto-detect)")
     args = parser.parse_args()
 
     if args.list:
-        print("\nДоступные детали:\n" + "-" * 60)
+        print("\nAvailable parts:\n" + "-" * 60)
         for name, info in PARTS.items():
-            print(f"  {name:<28} — {info['desc']}")
+            print(f"  {name:<28} -- {info['desc']}")
         print()
         return 0
 
     if not SCAD_FILE.exists():
-        print(f"ОШИБКА: не найден {SCAD_FILE}", file=sys.stderr)
+        print(f"ERROR: {SCAD_FILE} not found", file=sys.stderr)
         return 2
 
     openscad = args.openscad or find_openscad()
     if not openscad:
-        print("ОШИБКА: OpenSCAD не найден.", file=sys.stderr)
-        print("Скачайте бесплатно: https://openscad.org/downloads.html", file=sys.stderr)
-        print("Или укажите путь: --openscad /путь/к/openscad", file=sys.stderr)
+        print("ERROR: OpenSCAD not found.", file=sys.stderr)
+        print("Free download: https://openscad.org/downloads.html", file=sys.stderr)
+        print("Or pass an explicit path: --openscad /path/to/openscad", file=sys.stderr)
         return 3
 
     print(f"OpenSCAD: {openscad}")
-    print(f"SCAD-файл: {SCAD_FILE}")
-    print(f"Качество ($fn): {QUALITY_PRESETS[args.quality]}")
+    print(f"SCAD file: {SCAD_FILE}")
+    print(f"Quality ($fn): {QUALITY_PRESETS[args.quality]}")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    print(f"Папка вывода: {outdir.resolve()}\n")
+    print(f"Output dir: {outdir.resolve()}\n")
 
     targets = args.part if args.part else list(PARTS.keys())
     bad = [t for t in targets if t not in PARTS]
     if bad:
-        print(f"ОШИБКА: неизвестные детали: {bad}", file=sys.stderr)
-        print("Запустите --list чтобы увидеть доступные имена.", file=sys.stderr)
+        print(f"ERROR: unknown parts: {bad}", file=sys.stderr)
+        print("Run --list to see available names.", file=sys.stderr)
         return 4
 
     fn = QUALITY_PRESETS[args.quality]
@@ -223,7 +223,7 @@ def main() -> int:
     for name in targets:
         info = PARTS[name]
         stl_path = outdir / f"{name}.stl"
-        print(f"→ {name:<28} ", end="", flush=True)
+        print(f"-> {name:<28} ", end="", flush=True)
         success, err = render_part(info["call"], stl_path, openscad, fn)
         if success and stl_path.exists():
             print(f"OK   {fmt_size(stl_path.stat().st_size):>10}   ({info['desc']})")
@@ -233,7 +233,7 @@ def main() -> int:
             fail += 1
 
     dt = time.time() - t0
-    print(f"\nГотово: {ok} ОК, {fail} ошибок, время {dt:.1f} с.")
+    print(f"\nDone: {ok} OK, {fail} failed, total time {dt:.1f}s.")
     return 0 if fail == 0 else 5
 
 

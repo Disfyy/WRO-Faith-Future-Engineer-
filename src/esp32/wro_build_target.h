@@ -24,16 +24,16 @@
 #define WRO_TARGET_BENCH_TEST              10  // v13 — bench_test_v13.cpp
 #define WRO_TARGET_V13_MAIN                11  // v13 — wro_v13_main.cpp  ← ACTIVE
 
-// ── Активный режим — меняй только эту строку ──────────────────
-//   1  EPS323                  LEGACY v11 (только справочник)
-//   2  SCAN_I2C                v13 (обе I2C шины: IMU+AS5600+VL53L1X)
+// ── Active target — edit only this single #define line ────────
+//   1  EPS323                  LEGACY v11 (reference only)
+//   2  SCAN_I2C                v13 (both I2C buses: IMU + AS5600 + VL53L1X)
 //   3  TEST_MOTOR_SERVO_DRIVE  LEGACY v11
 //   4  TEST_NO_SENSORS         LEGACY v11
 //   5  TEST_SERVO              LEGACY v11
 //   6  TEST_SHORT_SEQUENCE     LEGACY v11
-//   7  TEST_SERVO_CAL          LEGACY v11 (нужен порт под v13)
-//   8  TEST_ENCODERS           v13 (AS5600 на двух I2C шинах)
-//   9  TEST_VL53L1X            v13 (VL53L1X с XSHUT-переадресацией)
-//  10  BENCH_TEST              v13 (все датчики + актуаторы)
-//  11  V13_MAIN                v13 (Open + Obstacle Challenge)  ← основная программа
+//   7  TEST_SERVO_CAL          LEGACY v11 (v13 port pending)
+//   8  TEST_ENCODERS           v13 (AS5600 on dual I2C)
+//   9  TEST_VL53L1X            v13 (VL53L1X with XSHUT addr remap)
+//  10  BENCH_TEST              v13 (all sensors + actuators)
+//  11  V13_MAIN                v13 (Open + Obstacle Challenge)  <-- main firmware
 #define WRO_ACTIVE_TARGET WRO_TARGET_V13_MAIN
