@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+__MACOSX/
+._*
+
+# Editor / OS junk
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# Arduino IDE build artifacts
+build/
+*.elf
+*.bin
+
+# Python caches (for the HSP94182_3D scripts)
+__pycache__/
+*.pyc
+
+# Local secrets / env files (none committed today, but defend the future)
+.env
+*.local
