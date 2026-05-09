@@ -1,1100 +1,1025 @@
-# 🔧 WRO Future Engineers — Полное руководство по сборке робота
+# 🔧 WRO Future Engineers — Full Robot Assembly Guide
 
-> **Team Faith | Версия 2.0 | Апрель 2026** (с обновлениями для v12, май 2026)
+> **Team Faith | v13 Hardware (May 2026)**
 >
-> Этот документ описывает сборку робота **от распаковки до первого заезда**. Каждый шаг содержит проверочные точки (✅), фото-ориентиры 📸 и тайминги ⏱️. **Не переходите к следующему шагу, пока текущий не пройден.**
+> This document covers building the robot **from unboxing to first run**. Every step has verification points (✅), photo cues 📸, and time estimates ⏱️. **Don't move on until the current step passes.**
 >
-> ⚠️ **v12 hardware (май 2026):** Аппаратная платформа мигрирована на ESP32-S3 + AS5048A SPI энкодеры + TFMini-S UART дальномеры (без TCA9548A I2C мультиплексора). Распиновка и список компонентов в этом руководстве частично устарели. Авторитетные источники для v12:
-> - Распиновка: [`docs/WRO_Wiring_Map_v12.md`](WRO_Wiring_Map_v12.md)
-> - Миграция v11 → v12: [`docs/WRO_Migration_v11_to_v12.md`](WRO_Migration_v11_to_v12.md)
-> - Активная прошивка: `src/esp32/wro_v12_main.cpp` (target 11)
-> - Сканер I2C: `src/esp32/scan_i2c_v12.cpp` (target 2)
+> **v13 hardware (May 2026):** ESP32-S3-DevKitC-1 N8R8 main board + 2× AS5600 encoders on dual native I2C + 2× VL53L1X distance sensors with XSHUT-based runtime address remapping + ICM-20948 IMU + OpenMV H7 Plus camera + BTS7960 motor driver + JX PDI-6221MG servo. **No TCA9548A I2C multiplexer.** Authoritative references for v13:
+> - Pin map: [`docs/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md)
+> - v12 → v13 migration: [`docs/WRO_Migration_v12_to_v13.md`](WRO_Migration_v12_to_v13.md)
+> - Active firmware: `src/esp32/wro_v13_main.cpp` (target 11)
+> - I2C scanner: `src/esp32/scan_i2c_v13.cpp` (target 2, scans both buses)
 
 ---
 
-## Навигация по этапам
+## Stage navigation
 
-| # | Этап | Сложность | ⏱️ Время | Страница |
-|:-:|------|:---------:|:--------:|:--------:|
-| 1 | [Подготовка шасси](#этап-1-подготовка-шасси) | 🟢 | 2ч | ↓ |
-| 2 | [Силовая цепь](#этап-2-силовая-цепь) | 🟡 | 3-4ч | ↓ |
-| 3 | [Мотор и драйвер BTS7960](#этап-3-мотор-и-драйвер-bts7960) | 🟢 | 1-2ч | ↓ |
-| 4 | [Рулевой серво](#этап-4-рулевой-серво) | 🟢 | 1ч | ↓ |
-| 5 | [ESP32 — мозг](#этап-5-esp32--мозг) | 🟢 | 1ч | ↓ |
-| 6 | [I2C шина (TCA9548A)](#этап-6-i2c-шина-tca9548a--датчики) | 🔴 | 3-4ч | ↓ |
-| 7 | [Энкодеры AS5600](#этап-7-энкодеры-as5600) | 🔴 | 3-4ч | ↓ |
-| 8 | [IMU (ICM-20948)](#этап-8-imu-icm-20948) | 🟡 | 2ч | ↓ |
-| 9 | [Камера OpenMV H7 Plus](#этап-9-камера-openmv-h7-plus) | 🟡 | 2ч | ↓ |
-| 10 | [VL53L1X ToF (опционально)](#этап-10-vl53l1x-tof-опционально) | 🟢 | 1ч | ↓ |
-| 11 | [Кнопка E-STOP](#этап-11-кнопка-e-stop) | 🟢 | 30м | ↓ |
-| 12 | [LED индикатор](#этап-12-led-индикатор) | 🟢 | 15м | ↓ |
-| 13 | [Сборка проводки](#этап-13-финальная-сборка-проводки) | 🟡 | 2-3ч | ↓ |
-| 14 | [Прошивка ПО](#этап-14-прошивка-по) | 🟡 | 2ч | ↓ |
-| 15 | [Калибровка и первый запуск](#этап-15-калибровка-и-первый-запуск) | 🔴 | 4-6ч | ↓ |
-
----
-
-## Подготовка: Инструменты и расходники
-
-### 🔧 Обязательные инструменты
-
-| # | Инструмент | Применение | Где понадобится |
-|:-:|------------|------------|:---------------:|
-| 1 | Паяльник 25-40W + припой Sn60/Pb40 | Пайка разъёмов, конденсаторов, резисторов | Этапы 2-8 |
-| 2 | Крестовая отвёртка PH1/PH2 | Крепёж шасси HSP, датчиков | Этапы 1,3,4 |
-| 3 | Шестигранники 1.5/2/2.5мм | Шасси HSP, пиньон, энкодеры | Этапы 1,7 |
-| 4 | Мультиметр цифровой | Проверка V, прозвонка, КЗ-тест | **Каждый этап!** |
-| 5 | Штангенциркуль (0.1мм) | Измерение диаметра колёс для одометрии | Этап 1 |
-| 6 | Бокорезы + стриппер | Обрезка и зачистка проводов | Этапы 2,13 |
-| 7 | Термофен (или зажигалка) | Термоусадочные трубки | Этап 2,13 |
-| 8 | Пинцет антистатический | Мелкие SMD-компоненты, магниты AS5600 | Этап 7 |
-
-### 📦 Расходники
-
-| Расходник | Кол-во | Критичность |
-|-----------|:------:|:-----------:|
-| Термоусадка 3/5/8мм | набор | ⚠️ Обязательно |
-| Припой Sn60/Pb40 1мм | 1м | ⚠️ Обязательно |
-| Флюс (канифоль или ЛТИ-120) | 1шт | ⚠️ Обязательно |
-| Кабельные стяжки 100мм | 30+ шт | ⚠️ Обязательно |
-| Двусторонний скотч 3M VHB | рулон | ⚠️ Обязательно |
-| Dupont разъёмы папа-мама | 40 шт | ⚠️ Обязательно |
-| Изолента | 1 рулон | Аварийный запас |
-| Суперклей | 1 тюбик | Фиксация магнитов AS5600 |
-| Горячий клей | 3-4 палочки | Фиксация Dupont |
-| Поролон 3мм | 5×5 см | Виброизоляция IMU |
+| # | Stage | Difficulty | ⏱️ Time |
+|:-:|------|:---------:|:--------:|
+| 1 | [Chassis prep](#stage-1-chassis-prep) | 🟢 | 2h |
+| 2 | [Power chain](#stage-2-power-chain) | 🟡 | 3-4h |
+| 3 | [Motor and BTS7960 driver](#stage-3-motor-and-bts7960-driver) | 🟢 | 1-2h |
+| 4 | [Steering servo](#stage-4-steering-servo) | 🟢 | 1h |
+| 5 | [ESP32-S3 main board](#stage-5-esp32-s3-main-board) | 🟢 | 1h |
+| 6 | [Dual I2C buses](#stage-6-dual-i2c-buses) | 🟡 | 2h |
+| 7 | [AS5600 encoders](#stage-7-as5600-encoders) | 🔴 | 3-4h |
+| 8 | [IMU (ICM-20948)](#stage-8-imu-icm-20948) | 🟡 | 2h |
+| 9 | [OpenMV H7 Plus camera](#stage-9-openmv-h7-plus-camera) | 🟡 | 2h |
+| 10 | [VL53L1X ToF sensors](#stage-10-vl53l1x-tof-sensors) | 🟡 | 2h |
+| 11 | [E-Stop button](#stage-11-e-stop-button) | 🟢 | 30m |
+| 12 | [Status LED](#stage-12-status-led) | 🟢 | 15m |
+| 13 | [Final wire dressing](#stage-13-final-wire-dressing) | 🟡 | 2-3h |
+| 14 | [Firmware flashing](#stage-14-firmware-flashing) | 🟡 | 2h |
+| 15 | [Calibration and first run](#stage-15-calibration-and-first-run) | 🔴 | 4-6h |
 
 ---
 
-## Подготовка: Проверка комплектации BOM
+## Tools and consumables
 
-> **⚠️ СТОП!** Перед началом сборки проверьте **ВСЕ** компоненты по списку. Обнаружить отсутствие детали на этапе 10 = потерять целый день.
+### Required tools
 
-### Механика и шасси
-- [ ] Шасси HSP 94182 1/16 4WD (в сборе: колёса + подвеска + мотор 380)
-- [ ] Пиньон 16T M0.6 Ø2.3мм (проверить шаг! если стоковый M0.48 — купить отдельно)
-- [ ] Серво JX PDI-6221MG 90-120° (с крепежом и качалками в комплекте)
+| Tool | Purpose |
+|------|---------|
+| 25-40 W soldering iron + Sn60/Pb40 | Connectors, caps, resistors |
+| Phillips PH1/PH2 screwdriver | HSP chassis, sensor mounts |
+| Hex keys 1.5/2/2.5 mm | HSP chassis, pinion, encoders |
+| Digital multimeter | Voltage, continuity, short-circuit checks — **every stage** |
+| Caliper (0.1 mm resolution) | Wheel diameter for odometry |
+| Wire cutters + stripper | Wires |
+| Heat gun (or lighter) | Heat-shrink tubing |
+| Anti-static tweezers | SMD parts, AS5600 magnets |
 
-### Электроника — контроллеры
-- [ ] ESP32 DevKitC V4 (**38 пинов**, проверить USB-C или micro-USB)
-- [ ] OpenMV Cam H7 Plus (проверить: с модулем камеры + USB-кабель)
+### Consumables
 
-### Электроника — датчики и драйверы
-- [ ] BTS7960 43A драйвер мотора (8-пиновый разъём)
-- [ ] GY-ICM20948V2 IMU (⚠️ **маркировка ICM-20948**, НЕ MPU-6050!)
-- [ ] AS5600 магнитный энкодер × 2 шт (⚠️ **магнит Ø6мм в каждом комплекте!**)
-- [ ] TCA9548A мультиплексор I2C (8 каналов)
-- [ ] VL53L1X ToF × 2 (опционально — можно добавить позже)
-
-### Питание
-- [ ] Li-ion/LiPo 7.4V 2000mAh T-plug (⚠️ **заряжен!**)
-- [ ] LM2596 DC-DC step-down × 2 шт
-- [ ] Переходник T-plug → XT60 + пара XT60 разъёмов
-- [ ] Переключатель KCD3 × 1 (⚠️ только ОДИН — правило WRO 9.10)
-- [ ] Конденсаторы керамические 0.1 мкФ (маркировка 104) × 10 шт
-- [ ] Резисторы 4.7 кОм × 4 шт (I2C pull-up)
-- [ ] Резистор 220 Ом × 1 (LED)
-- [ ] Резистор 10 кОм × 1 (E-STOP pull-up)
+- Heat-shrink tubing assortment (3 / 5 / 8 mm)
+- Sn60/Pb40 1 mm solder, ~1 m
+- Flux (rosin or LTI-120), 1 unit
+- Cable ties 100 mm — 30+
+- Double-sided 3M VHB tape
+- Dupont male/female jumpers — 40
+- Insulating tape (emergency)
+- Super glue (AS5600 magnet fixation)
+- Hot glue, 3-4 sticks
+- 3 mm foam, 5×5 cm (IMU vibration isolation)
 
 ---
 
-## Этап 1: Подготовка шасси
+## BOM check before you start
 
-> ⏱️ ~2 часа | 🟢 Лёгкая сложность
+> ⚠️ **STOP** — verify every component before you start. Realizing a part is missing on stage 10 burns a whole day.
 
-### 1.1. Разборка лишнего
+### Mechanics
+- [ ] HSP 94182 1/16 4WD chassis (assembled: wheels + suspension + 380 motor)
+- [ ] 16T M0.6 pinion, Ø2.3 mm bore (verify pitch — if stock is M0.48, source M0.6)
+- [ ] JX PDI-6221MG servo (with included horns)
 
-HSP 94182 идёт с приёмником, ESC и кузовом. Всё это нужно **полностью снять**:
+### Electronics — controllers
+- [ ] **ESP32-S3-DevKitC-1 N8R8** (USB-C, native USB-OTG, all-bidirectional GPIOs)
+- [ ] OpenMV Cam H7 Plus (with camera module + USB cable)
 
-**Порядок действий:**
-1. Снять кузов — отогнуть клипсы по 4 углам, потянуть вверх
-2. Найти и отключить стоковый ESC (электронный регулятор скорости) — 3 провода к мотору + 2 провода питания
-3. Отключить стоковый приёмник — обычно подключён к ESC кабелем servo-connector
-4. **Аккуратно** вытащить оба модуля из шасси
-5. Оставить на шасси: подвеску, мотор 380, серво-крепление, колёса, карданные валы
+### Electronics — sensors and drivers
+- [ ] BTS7960 43A motor driver (8-pin connector)
+- [ ] GY-ICM20948V2 IMU (verify silkscreen says **ICM-20948**, not MPU-6050)
+- [ ] AS5600 magnetic encoder × 2 (each kit includes a Ø6 mm diametrically magnetized magnet)
+- [ ] VL53L1X ToF × 2 (Pololu or Adafruit breakout)
 
-> **⛔ НЕ СНИМАЙТЕ** рулевые тяги и рычаги подвески! Их геометрия настроена на заводе. Разборка без фото-фиксации = 2 часа потерянного времени на сборку обратно.
+### Power
+- [ ] Li-ion / LiPo 7.4 V 2000 mAh, T-plug (charged!)
+- [ ] LM2596 DC-DC step-down × 2
+- [ ] T-plug → XT60 adapter + spare XT60 pair
+- [ ] KCD3 toggle switch × 1 (only one — WRO Rule 9.10)
+- [ ] 0.1 µF ceramic caps (104) × 10
+- [ ] 4.7 kΩ resistors × 4 (I2C pull-ups, two per bus)
+- [ ] 220 Ω resistor × 1 (LED)
+- [ ] 10 kΩ resistor × 1 (E-Stop pull-up, optional — internal pull-up usually sufficient)
 
-📸 *Сфотографируйте шасси ДО и ПОСЛЕ разборки — пригодится для v-photos/ репозитория.*
+---
 
-### 1.2. Замена пиньона (если нужно)
+## Stage 1: Chassis prep
 
-Проверьте шаг стокового пиньона. Если шаг M0.48 или M0.5 — заменить на M0.6:
+> ⏱️ ~2 hours | 🟢 Easy
 
-1. Ослабить стопорный винт пиньона (шестигранник **1.5мм**)
-2. Сдёрнуть пиньон с вала мотора. Если не идёт:
-   - Нагреть феном пиньон 10 сек (50-60°C) → попробовать снова
-   - Или использовать мелкий съёмник
-3. Надеть **16T M0.6 Ø2.3мм** на вал
-4. Затянуть стопорный винт **точно на лыске** вала (плоская площадка)
-5. **Тест зазора:** вставить лист бумаги между зубьями пиньона и основной шестерни. Провернуть. Вынуть бумагу. Зазор ~0.1мм.
+### 1.1. Strip the unwanted parts
 
-| Симптом | Причина | Решение |
-|---------|---------|---------|
-| Шестерни гудят | Зазор слишком тугой | Сдвинуть мотор на 0.1мм |
-| Шестерни щёлкают | Зазор слишком свободный | Сдвинуть мотор ближе |
-| Вибрация на высоких оборотах | Пиньон не на лыске | Переставить на лыску |
+The HSP 94182 ships with a stock receiver, ESC, and shell — all of these come off:
 
-### 1.3. Установка серво JX PDI-6221MG
+1. Pop the body shell off (4 corner clips, pull up).
+2. Locate and unplug the stock ESC (3 wires to the motor + 2 power leads).
+3. Unplug the stock receiver (servo connector to ESC).
+4. **Carefully** remove both modules.
+5. Keep on the chassis: suspension, 380 motor, servo bracket, wheels, drive shafts.
 
-1. Вставить серво в штатное крепление HSP (прямоугольное окно)
-2. Закрепить **4 винтами** из комплекта серво (с резиновыми втулками если есть)
-3. **⚠️ КРИТИЧНО — качалка серво:**
-   - **НЕ подавать питание на серво!** Качалка ставится при ВЫКЛЮЧЕННОМ питании
-   - Рукой повернуть вал серво в **среднее положение** (механический центр)
-   - Надеть качалку так, чтобы передние колёса смотрели **строго прямо**
-   - Зафиксировать центральным винтом
-4. Подключить рулевую тягу к качалке
+> ⛔ **Do NOT remove** the steering rods or suspension arms. Their geometry is set at the factory; reassembling without photos costs 2 hours.
 
-### 1.4. Измерение диаметра колёс (для одометрии)
+📸 *Photograph the chassis before and after stripping — useful for the `v-photos/` folder.*
 
-Это **критично** для точного подсчёта пройденного расстояния:
+### 1.2. Pinion swap (if needed)
 
-1. Снять ОДНО колесо
-2. Штангенциркулем измерить **внешний диаметр** резины (слегка прижать — имитировать нагрузку)
-3. Записать: **D = _____ мм**
-4. Вычислить тиков на сантиметр:
+Verify the stock pinion pitch. If it's M0.48 or M0.5, swap to M0.6:
+
+1. Loosen the pinion grub screw (1.5 mm hex).
+2. Pull the pinion off the motor shaft. If it sticks, heat with a hot-air gun for 10 s (50-60 °C) and try again, or use a small puller.
+3. Slide the **16T M0.6 Ø2.3 mm** pinion onto the shaft.
+4. Tighten the grub screw onto the **flat** of the shaft.
+5. **Backlash check:** slip a sheet of paper between pinion and spur, rotate, and pull the paper out. Aim for ~0.1 mm.
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Gears whining | Backlash too tight | Move motor 0.1 mm out |
+| Gears clicking | Backlash too loose | Move motor in |
+| Vibration at high RPM | Grub screw not on the flat | Reposition on the flat |
+
+### 1.3. Mount the JX PDI-6221MG servo
+
+1. Insert the servo into the HSP servo bay (rectangular cutout).
+2. Secure with 4 screws from the servo's kit (use included rubber grommets if any).
+3. **Servo horn — critical:** with **power off**, manually rotate the servo to its mechanical center, then fit the horn so the front wheels point straight, and tighten the center screw.
+4. Connect the steering tie rod to the horn.
+
+### 1.4. Wheel diameter for odometry
+
+This is **critical** for accurate distance counting:
+
+1. Remove one wheel.
+2. Caliper the **outer** diameter of the tire (squeeze lightly to simulate load).
+3. Record: **D = ___ mm**.
+4. Compute ticks/cm:
+```
+Circumference C = π × D mm
+TICKS_PER_CM = 4096 / (C / 10)
+
+Example: D = 47 mm -> C = 147.7 mm -> 4096 / 14.77 ≈ 277 ticks/cm
+```
+5. Update `TICKS_PER_CM` in `src/esp32/wro_hw_config_v13.h` if your wheels differ from the default 47 mm.
+
+✅ **Stage 1 checklist:**
+- [ ] Chassis is clean — ESC, receiver, body removed
+- [ ] Pinion installed; gears are quiet
+- [ ] Servo installed; horn at mechanical center; wheels straight
+- [ ] Wheel diameter measured: D = ___ mm, TICKS_PER_CM = ___
+- [ ] 📸 Clean-chassis photo taken
+
+---
+
+## Stage 2: Power chain
+
+> ⏱️ 3-4 hours | 🟡 Medium difficulty
+>
+> ⛔ **Polarity!** Reversing + and − on the LiPo = **instant** electronics meltdown. Verify every wire with a multimeter **before** plugging it in.
+
+### 2.1. Power architecture (WRO 2026 compliant)
+
+> **WRO Rule 9.10:** "Only ONE switch is allowed to power on the vehicle."
 
 ```
-Окружность C = π × D мм
-TICKS_PER_CM = 4096 / C × 10
-
-Пример: D = 75мм → C = 235.6мм → 4096/235.6 = 17.38 тиков/мм = 174 тиков/см
+LiPo 7.4V ──T-plug──> T->XT60 adapter ──> XT60
+                                          │
+                                  KCD3 (the only switch)
+                                          │
+                            ┌─────────────┼─────────────┐
+                            │             │             │
+                            v             v             v
+                      BTS7960 (VCC)   LM2596 #1     LM2596 #2
+                      7.4V direct    -> 5.00V       -> 3.30V
+                      (motor)       (ESP32, servo)  (sensors)
 ```
 
-5. Записать значение — для v12 это `TICKS_PER_CM` в `src/esp32/wro_hw_config_v12.h` (по умолчанию ≈1110 тиков/см при 14-битном AS5048A); для v11 — `legacy_eps323.cpp`, `#define TICKS_PER_CM` (277 тиков/см)
+**Loads per rail:**
 
-✅ **Чеклист этапа 1:**
-- [ ] Шасси чистое: ESC, приёмник, кузов удалены
-- [ ] Пиньон установлен, зубья не гудят и не щёлкают
-- [ ] Серво установлено, качалка на центре, колёса прямо
-- [ ] Диаметр колёс измерен и записан: D = _____ мм, TICKS_PER_CM = _____
-- [ ] 📸 Фото чистого шасси сделано
+| Rail | Voltage | Loads | Peak current |
+|------|:-------:|-------|:------------:|
+| **Motor** | 7.4 V | BTS7960 → 380 motor | ~8 A peak |
+| **5 V** | 5.00 V | ESP32-S3 VIN, JX servo, OpenMV VIN, VL53L1X VIN | ~3 A |
+| **3.3 V** | 3.30 V | ICM-20948, AS5600 ×2 | ~0.2 A |
 
----
+> Note: ESP32-S3 has its own onboard 3.3 V regulator — it powers the I2C-bus pull-ups and the AS5600s directly from the 3.3 V pin. The external LM2596 #2 is mostly redundant in v13; you can omit it if the breakout boards have onboard LDOs.
 
-## Этап 2: Силовая цепь
+### 2.2. Set up LM2596 BEFORE plugging in any electronics
 
-> ⏱️ 3-4 часа | 🟡 Средняя сложность
->
-> **⛔ ПОЛЯРНОСТЬ!** Перепутать + и − на LiPo = **мгновенное** горение электроники. **Каждый провод** проверять мультиметром ПЕРЕД подключением.
+> ⛔ Set the voltage **first**, then connect the load. If LM2596 is at 12 V from the factory, the ESP32 dies.
 
-### 2.1. Архитектура питания (WRO 2026 Compliant)
+**LM2596 #1 → 5 V:**
+1. Connect IN+ / IN− to the battery via temporary alligator clips.
+2. Power on.
+3. Multimeter on OUT+/OUT−.
+4. Slowly turn the trim pot until it reads **5.00 V ± 0.05 V**.
+5. Verify under load: 100 Ω resistor (50 mA) — voltage should not sag.
+6. Power off, mark the regulator with "5V".
 
-> **Правило WRO 9.10:** «Для включения транспортного средства разрешён **только один выключатель**».
+**LM2596 #2 → 3.3 V** (optional with onboard breakout LDOs):
+1. Same procedure, target **3.30 V ± 0.05 V**.
+2. Mark "3.3V".
 
-```
-LiPo 7.4V ──T-plug──▶ Переходник T→XT60 ──▶ XT60 разъём
-                                                  │
-                                         KCD3 (ЕДИНСТВЕННЫЙ!)
-                                                  │
-                                    ┌─────────────┼─────────────┐
-                                    │             │             │
-                                    ▼             ▼             ▼
-                              BTS7960 (VCC)  LM2596 #1     LM2596 #2
-                              7.4V прямое    → 5.00V       → 3.30V
-                              (мотор)        (ESP32,Серво)  (OpenMV,I2C)
-```4
+### 2.3. Solder the power wiring
 
-**Потребители по шинам:**
-
-| Шина | Напряжение | Потребители | Макс. ток |
-|------|:----------:|-------------|:---------:|
-| **Силовая** | 7.4V | BTS7960 → Мотор 380 | ~8A пиковый |
-| **5V** | 5.00V | ESP32 VIN, Серво JX PDI-6221MG | ~3A |
-| **3.3V** | 3.30V | OpenMV VIN, TCA9548A, AS5600×2, ICM-20948 | ~0.5A |
-
-### 2.2. Настройка LM2596 (ДО подключения электроники!)
-
-> **⛔ Сначала настроить — потом подключать!** Если LM2596 по умолчанию выдаёт 12V → ESP32 сгорит.
-
-**LM2596 #1 → 5V:**
-1. Подключить IN+ и IN− к батарее (через временные крокодилы)
-2. Включить батарею
-3. Мультиметр на выход OUT+/OUT−
-4. Маленькой отвёрткой **МЕДЛЕННО** крутить подстроечный резистор
-5. Добиться показания **5.00V ± 0.05V**
-6. Проверить под нагрузкой: подключить резистор 100Ом (50мА) — напряжение не должно просесть
-7. Отключить, **пометить маркером «5V»**
-
-**LM2596 #2 → 3.3V:**
-1. Аналогично настроить на **3.30V ± 0.05V**
-2. Проверить под нагрузкой
-3. Пометить **«3.3V»**
-
-### 2.3. Пайка силовой разводки
-
-**Последовательность пайки:**
-
-1. Отрезать 14AWG провод: красный 30см + чёрный 30см
-2. Зачистить все концы на **5мм**
-3. Припаять XT60 разъём к проводам от батареи (красный → +, чёрный → −)
-4. **Красный (+)** от XT60 → через тумблер KCD3 → разветвить на 3 провода:
-   - → BTS7960 пин B+ (14AWG — силовой!)
-   - → LM2596 #1 IN+ (можно 22AWG)
-   - → LM2596 #2 IN+ (можно 22AWG)
-5. **Чёрный (−)** от XT60 → разветвить на 3 провода:
-   - → BTS7960 пин B−
+1. Cut 14 AWG: red 30 cm + black 30 cm.
+2. Strip 5 mm on every end.
+3. Solder XT60 to the wires from the battery (red → +, black → −).
+4. From the XT60 **red (+)**, run through KCD3 and split into 3:
+   - → BTS7960 B+ (14 AWG, motor current!)
+   - → LM2596 #1 IN+ (22 AWG OK)
+   - → LM2596 #2 IN+ (22 AWG OK, if used)
+5. **Black (−)** from XT60 splits into 3:
+   - → BTS7960 B−
    - → LM2596 #1 IN−
    - → LM2596 #2 IN−
-6. **Каждое соединение** закрыть термоусадкой 5мм
+6. Heat-shrink every joint (5 mm).
 
-### 2.4. Фильтрация питания от EMI мотора
+### 2.4. Motor EMI filtering
 
-> Мотор 380 создаёт **мощные электромагнитные помехи**. Без фильтрации: I2C зависает, UART теряет пакеты, IMU дрейфует.
+> The 380 motor produces strong EMI. Without filtering, I2C hangs, UART drops frames, the IMU drifts.
 
-**Конденсаторы на мотор (3 штуки 0.1мкФ керамические «104»):**
-
+**3× 0.1 µF ceramic caps on the motor:**
 ```
         0.1µF
-  (+)────┤├────(−)       ← между клеммами мотора
-  (+)────┤├────(корпус)  ← плюс к корпусу мотора
-  (−)────┤├────(корпус)  ← минус к корпусу мотора
+  (+)────┤├────(−)        between motor terminals
+  (+)────┤├────(case)      + to motor case
+  (−)────┤├────(case)      − to motor case
 ```
 
-**Дополнительные конденсаторы:**
-- 0.1мкФ на входе BTS7960 (VCC-GND) — впаять прямо на плату
-- 0.1мкФ на выходе LM2596 #1 (VOUT-GND)
-- 0.1мкФ на выходе LM2596 #2 (VOUT-GND)
-- **470мкФ электролитический** на шине 5V (защита от просадок при пуске мотора)
+Plus:
+- 0.1 µF on BTS7960 VCC-GND (right at the board)
+- 0.1 µF on LM2596 #1 OUT-GND
+- 0.1 µF on LM2596 #2 OUT-GND (if used)
+- **470 µF electrolytic** on the 5 V rail (catches motor-start sag)
 
-### 2.5. Проверка этапа 2 — мультиметром
+### 2.5. Verify with a multimeter (KCD3 ON)
 
-**Порядок проверки (тумблер KCD3 ВКЛЮЧЁН):**
+| # | Test | Expected | If wrong |
+|:-:|------|:--------:|----------|
+| 1 | LM2596 #1 OUT | 5.00 V ±0.05 | Re-trim |
+| 2 | LM2596 #2 OUT | 3.30 V ±0.05 | Re-trim |
+| 3 | Short test 7.4 V+ ↔ GND | open (∞) | ⛔ Find and remove the short |
+| 4 | Short test 5 V+ ↔ GND | open | ⛔ |
+| 5 | Short test 3.3 V+ ↔ GND | open | ⛔ |
+| 6 | KCD3 OFF → battery V | 0 V on every rail | Switch is bad |
 
-| # | Тест | Ожидание | Если не так |
-|:-:|------|:--------:|-------------|
-| 1 | V на LM2596 #1 выходе | 5.00V ±0.05V | Подкрутить подстроечник |
-| 2 | V на LM2596 #2 выходе | 3.30V ±0.05V | Подкрутить подстроечник |
-| 3 | КЗ-тест: + к − (7.4V) | ∞ (нет КЗ) | ⛔ Найти и устранить замыкание! |
-| 4 | КЗ-тест: + к − (5V) | ∞ | ⛔ |
-| 5 | КЗ-тест: + к − (3.3V) | ∞ | ⛔ |
-| 6 | Тумблер OFF → V батареи | 0V на всех шинах | Тумблер неисправен |
-
-✅ **Чеклист этапа 2:**
-- [ ] LM2596 #1: 5.00V ± 0.05V (помечен маркером)
-- [ ] LM2596 #2: 3.30V ± 0.05V (помечен маркером)
-- [ ] KCD3 — единственный тумблер, контролирует ВСЁ питание
-- [ ] Конденсаторы: 3 шт на моторе + 1 на BTS7960 + 2 на LM2596 + 1 электролит 470мкФ
-- [ ] Все пайки закрыты термоусадкой
-- [ ] Нет КЗ (мультиметр подтверждает)
-- [ ] 📸 Фото силовой разводки
+✅ **Stage 2 checklist:**
+- [ ] LM2596 #1: 5.00 V ± 0.05 V (marked)
+- [ ] LM2596 #2: 3.30 V ± 0.05 V (marked) or omitted with onboard LDOs
+- [ ] KCD3 is the only switch and gates everything
+- [ ] Caps installed: 3 on the motor + 1 on BTS7960 + 1 per LM2596 + 1× 470 µF electrolytic on 5 V
+- [ ] All joints heat-shrunk
+- [ ] No shorts — multimeter confirms
+- [ ] 📸 Power harness photo
 
 ---
 
-## Этап 3: Мотор и драйвер BTS7960
+## Stage 3: Motor and BTS7960 driver
 
-> ⏱️ 1-2 часа | 🟢 Лёгкая сложность
+> ⏱️ 1-2 hours | 🟢 Easy
 
-### 3.1. Таблица подключения BTS7960
+### 3.1. BTS7960 wiring (v13 pin map)
 
-| BTS7960 пин | Куда | Провод | Примечание |
-|-------------|------|:------:|------------|
-| **B+** | 7.4V от KCD3 (+) | 14AWG красный | Силовое питание мотора |
-| **B−** | 7.4V от KCD3 (−) | 14AWG чёрный | Силовая земля |
-| **M+** | Мотор клемма + | 14AWG | Направление вращения |
-| **M−** | Мотор клемма − | 14AWG | Направление вращения |
-| **VCC** (логика) | 5V от LM2596 #1 | Dupont | Логическое питание |
-| **GND** (логика) | GND общий | Dupont | ⚠️ К общей GND! |
-| **R_EN** | ESP32 **GPIO19** | Dupont | HIGH = мотор активен |
-| **L_EN** | ESP32 **GPIO23** | Dupont | HIGH = мотор активен |
-| **RPWM** | ESP32 **GPIO5** | Dupont | ШИМ «вперёд» |
-| **LPWM** | ESP32 **GPIO14** | Dupont | ШИМ «назад» |
+| BTS7960 pin | Goes to | Wire | Note |
+|-------------|---------|:----:|------|
+| **B+** | 7.4 V from KCD3 (+) | 14 AWG red | Motor power |
+| **B−** | 7.4 V from KCD3 (−) | 14 AWG black | Motor ground |
+| **M+** | Motor + terminal | 14 AWG | |
+| **M−** | Motor − terminal | 14 AWG | |
+| **VCC** (logic) | 5 V from LM2596 #1 | Dupont | |
+| **GND** (logic) | Common GND | Dupont | ⚠️ star-grounded |
+| **R_EN** | ESP32-S3 **GPIO 38** | Dupont | HIGH = enabled |
+| **L_EN** | ESP32-S3 **GPIO 39** | Dupont | HIGH = enabled |
+| **RPWM** | ESP32-S3 **GPIO 40** | Dupont | LEDC Ch0 — forward |
+| **LPWM** | ESP32-S3 **GPIO 41** | Dupont | LEDC Ch1 — reverse |
 
-> **R_EN и L_EN** должны быть HIGH для работы мотора. В прошивке это делается автоматически в `setup()`. Если мотор не крутится — **первым делом** проверить эти 2 пина мультиметром: должно быть 3.3V.
+> R_EN and L_EN must be HIGH for the driver to run. The firmware does that in `setup()`. If the motor doesn't spin, multimeter these two first — should read 3.3 V.
 
-### 3.2. Тест направления
+### 3.2. Direction test
 
-1. Подключить всё по таблице
-2. Загрузить временный тест-скетч (или основную прошивку)
-3. В Serial Monitor подать команду вперёд
-4. **Если колёса крутятся НАЗАД** → поменять M+ и M− местами на BTS7960
-5. Зафиксировать провода
+1. Wire everything per the table.
+2. Flash the bench-test firmware (target 10).
+3. Send the `f` (forward) command in Serial Monitor.
+4. If the wheels spin **backwards**, swap M+ and M− at the BTS7960.
 
-✅ **Чеклист этапа 3:**
-- [ ] Мотор крутится в правильную сторону при команде «вперёд»
-- [ ] BTS7960 не греется при холостом ходе (рукой — тёплый OK, горячий ⛔)
-- [ ] Конденсаторы на клеммах мотора установлены (этап 2)
-
----
-
-## Этап 4: Рулевой серво
-
-> ⏱️ ~1 час | 🟢 Лёгкая сложность
-
-### 4.1. Подключение JX PDI-6221MG
-
-| Провод серво | Куда подключить | Цвет провода |
-|:------------:|-----------------|:------------:|
-| **+** (питание) | 5V от LM2596 #1 | Красный |
-| **−** (земля) | GND общий | Коричневый |
-| **Signal** | ESP32 **GPIO18** | Оранжевый |
-
-> **⛔ НЕ питайте серво от пина 3.3V ESP32!** PDI-6221MG потребляет до **2.5A** при нагрузке — это мгновенно сожжёт LDO-регулятор ESP32.
-
-### 4.2. Калибровка центра
-
-1. Загрузить тестовый скетч на ESP32:
-```cpp
-#include <ESP32Servo.h>
-Servo s;
-void setup() { s.attach(18, 500, 2500); }
-void loop() { s.write(90); delay(100); }
-```
-2. Подать питание 5V
-3. Колёса должны встать **прямо**
-4. Если не прямо → снять качалку, переставить на 1-2 шлица, повторить
-5. Точная подстройка: если при `write(90)` колёса чуть влево → `SERVO_CENTER = 92`
-6. Записать: **SERVO_CENTER = _____°** (обычно 88-92)
-
-### 4.3. Тест диапазона
-
-Изменить скетч: `s.write(45)` → пауза → `s.write(135)`. Колёса должны поворачиваться на полный угол **без заеданий и хруста**.
-
-✅ **Чеклист этапа 4:**
-- [ ] Серво центрировано: колёса прямо при SERVO_CENTER = _____°
-- [ ] Полный диапазон 45°-135° без заеданий
-- [ ] Серво питается от 5V LM2596, **НЕ** от ESP32
-- [ ] Рулевая тяга подключена к качалке
+✅ **Stage 3 checklist:**
+- [ ] Motor turns the right way on "forward"
+- [ ] BTS7960 isn't hot at idle (warm = OK; hot = ⛔)
+- [ ] Motor caps installed (stage 2)
 
 ---
 
-## Этап 5: ESP32 — мозг
+## Stage 4: Steering servo
 
-> ⏱️ ~1 час | 🟢 Лёгкая сложность
+> ⏱️ ~1 hour | 🟢 Easy
 
-### 5.1. Физическая установка
+### 4.1. JX PDI-6221MG wiring (v13)
 
-1. Вставить ESP32 DevKitC V4 в макетную плату через гребёнку
-2. Макетную плату закрепить на шасси (двусторонний скотч 3M VHB)
-3. **USB-разъём** ESP32 должен быть доступен снаружи (прошивка + отладка)
+| Servo wire | Goes to | Color |
+|:----------:|---------|:-----:|
+| **+** (power) | 5 V from LM2596 #1 | Red |
+| **−** (ground) | Common GND | Brown |
+| **Signal** | ESP32-S3 **GPIO 42** | Orange |
 
-> **⚠️ Расположение:** ESP32 **подальше от мотора и BTS7960!** EMI от мотора 380 вызывает сбои I2C и UART. Минимальное расстояние: **5 см**.
+> ⛔ **Do NOT** power the servo from the ESP32-S3's 3.3 V pin. The PDI-6221MG draws up to **2.5 A** under load and will fry the onboard regulator instantly.
 
-### 5.2. Звездообразная GND (критично!)
+### 4.2. Center calibration
 
-**Самая частая причина проблем — нет общей земли.**
+Use the dedicated sketch [`sketches/servo_calibrate/servo_calibrate.ino`](../sketches/servo_calibrate/servo_calibrate.ino) — it walks you through fine-tuning center / left / right with `+` `-` keys and prints the values to paste into `wro_hw_config_v13.h`.
 
-Все GND провода сходятся в **ОДНУ точку** на макетной плате:
+### 4.3. Range test
 
-```
-                    ┌─── ESP32 GND
-                    ├─── BTS7960 GND (логический)
-  ОБЩАЯ GND ───────├─── LM2596 #1 GND
-  (одна точка)      ├─── LM2596 #2 GND
-                    ├─── OpenMV GND
-                    └─── Все датчики GND
-```
+After calibration the servo should swing left ↔ right without buzzing or binding. If it stalls at an end-stop, increase `SERVO_MARGIN_US` in `wro_config_v13.h` (default 60 µs).
 
-### Полная структурированная схема (все узлы)
-
-![Полная структурированная схема проводки](../schemes/WRO_Full_System_Diagram.png)
-
-Файл схемы для редактирования: `../schemes/WRO_Full_System_Diagram.mmd`
-
-> **⛔ НЕ делайте цепочку** GND→GND→GND→GND. Это создаёт земляные петли и наводки, которые вызывают случайные сбои I2C.
-
-### 5.3. Питание ESP32
-
-| ESP32 пин | Подключение |
-|:---------:|-------------|
-| **VIN** (или 5V) | 5V от LM2596 #1 |
-| **GND** | Общая GND |
-
-> **⛔ НЕЛЬЗЯ** питать ESP32 одновременно через VIN и USB! При отладке по USB → **отключить VIN**.
-
-### 5.4. Что можно и нельзя вести через макетную плату
-
-Используйте макетную плату как **сигнальную/распределительную** шину, но не как силовую магистраль.
-
-Разрешено через макетную плату:
-- сигналы GPIO (PWM, UART, I2C)
-- слаботочные линии датчиков (3.3V)
-- общая точка GND (звезда)
-
-Не вести через макетную плату:
-- питание мотора (7.4V -> BTS7960)
-- питание сервопривода под нагрузкой (до 2.5A)
-- любые линии с током > 0.5A
-
-Рекомендация по силе:
-- 5V к серво вести **отдельной парой проводов** от LM2596
-- рядом с серво поставить электролит 470-1000мкФ между +5V и GND
-
-✅ **Чеклист этапа 5:**
-- [ ] ESP32 загорается при подаче 5V (синий LED мигает)
-- [ ] Serial Monitor работает на 115200 бод
-- [ ] GND общий: мультиметром прозвонить 0Ом между GND всех компонентов
-- [ ] ESP32 расположен > 5см от мотора
+✅ **Stage 4 checklist:**
+- [ ] Servo centered (wheels straight at SERVO_CENTER_US)
+- [ ] Full range left to right is smooth
+- [ ] Servo runs from 5 V (LM2596), not from the ESP32-S3
+- [ ] Tie rod connected to the horn
 
 ---
 
-## Этап 6: I2C шина (TCA9548A + датчики)
+## Stage 5: ESP32-S3 main board
 
-> ⏱️ 3-4 часа | 🔴 Сложная — самый капризный этап
+> ⏱️ ~1 hour | 🟢 Easy
 
-### 6.1. Зачем TCA9548A
+### 5.1. Mount
 
-У нас 2× AS5600 (оба с адресом 0x36) и 2× VL53L1X (оба 0x29). Без мультиплексора они конфликтуют на одной I2C шине.
+1. Drop the ESP32-S3-DevKitC-1 into a breadboard or sockets via header pins.
+2. Mount the breadboard to the chassis with 3M VHB.
+3. Keep the **USB-C port accessible** for flashing and debug.
 
-### 6.2. Подключение TCA9548A
+> ⚠️ Keep the ESP32-S3 **at least 5 cm from the motor and BTS7960**. Motor EMI corrupts I2C and UART otherwise.
 
-| TCA9548A пин | Куда | Примечание |
-|:------------:|------|------------|
-| **VIN** | 3.3V от LM2596 #2 | Логическое питание |
-| **GND** | Общая GND | |
-| **SDA** | ESP32 **GPIO21** | Данные I2C |
-| **SCL** | ESP32 **GPIO22** | Тактовая I2C |
-| **A0** | GND | Адрес бит 0 → 0 |
-| **A1** | GND | Адрес бит 1 → 0 |
-| **A2** | GND | Адрес бит 2 → 0 |
-| **RST** | Не подключен | Внутренний pull-up |
+### 5.2. Star ground (critical!)
 
-Итоговый адрес: **0x70** (все биты адреса = 0)
+The most common failure cause is no common ground. All grounds meet at **one point** on the breadboard:
 
-### 6.3. Pull-up резисторы (КРИТИЧНО!)
-
-> ESP32 имеет слабые внутренние pull-up (~45 кОм). На частоте 400 кГц с проводами > 10см I2C **будет** сбоить. Внешние pull-up **обязательны**.
-
-Подключить **4.7 кОм** резисторы:
-- **SDA → 3.3V** (один резистор)
-- **SCL → 3.3V** (один резистор)
-
-Место: **на главной шине** ESP32 ↔ TCA9548A (максимально короткие провода).
-
-> Pull-up ставятся **ТОЛЬКО** на главную шину. На каналах TCA pull-up **НЕ НУЖНЫ** — TCA буферизует сигнал.
-
-### 6.4. Карта каналов TCA9548A
-
-| Канал | Датчик | I2C адрес | Макс. длина провода |
-|:-----:|--------|:---------:|:-------------------:|
-| CH0 | ICM-20948 (IMU) | 0x69 | ≤ 10 см |
-| CH1 | AS5600 (левый энкодер) | 0x36 | ≤ 25 см |
-| CH2 | AS5600 (правый энкодер) | 0x36 | ≤ 25 см |
-| CH3 | VL53L1X (фронт) | 0x29 | ≤ 20 см |
-| CH4 | VL53L1X (бок) | 0x29 | ≤ 20 см |
-| CH5-7 | *Свободны* | — | — |
-
-> **⚠️ Длина проводов I2C** — критичный фактор! При 400 кГц максимум ~30см. Если длиннее → снизить `Wire.setClock()` до 100000.
-
-### 6.5. Диагностика — запуск I2C сканера
-
-1. Загрузить `src/esp32/scan_i2c_v12.cpp` на ESP32 (target 2; для v12 ожидается **только** `0x68`)
-2. Serial Monitor → 115200 бод
-3. **Ожидаемый результат:**
 ```
-✅ TCA9548A (0x70): НАЙДЕН
-
-Канал [0]: 0x69 — ICM-20948 (AD0=VCC)
-Канал [1]: 0x36 — AS5600 (энкодер)
-Канал [2]: 0x36 — AS5600 (энкодер)
-Канал [3]: пусто
-Канал [4]: пусто
-...
-✅ СТАТУС: ВСЕ ОБЯЗАТЕЛЬНЫЕ ДАТЧИКИ В НОРМЕ
+                   ┌── ESP32-S3 GND
+                   ├── BTS7960 logic GND
+common GND ────────┼── LM2596 #1 GND
+(one node)         ├── LM2596 #2 GND
+                   ├── OpenMV GND
+                   └── every sensor GND
 ```
 
-### 6.6. Troubleshooting I2C
+> ⛔ **Do NOT** chain GND through the components in series. That creates ground loops; I2C will fail intermittently.
 
-| Проблема | Вероятная причина | Решение |
-|----------|-------------------|---------|
-| TCA не найден | Нет pull-up или нет питания | Установить 4.7кОм pull-up; проверить 3.3V |
-| Датчик на канале не найден | Провод SDA/SCL перепутан | Прозвонить провода |
-| Случайные зависания | EMI от мотора | Добавить конденсаторы; укоротить провода |
-| Все датчики пропадают | GND не общий | Прозвонить GND между ESP32 и TCA |
+### 5.3. Power the ESP32-S3
 
-### 6.7. Recovery / rollback-процедура (если шина нестабильна)
+| ESP32-S3 pin | Connection |
+|:------------:|------------|
+| **VIN** (or 5V) | 5 V from LM2596 #1 |
+| **GND** | Common GND |
 
-Если после 2 повторных проверок I2C всё ещё нестабилен, делайте откат к минимальной конфигурации:
+> ⛔ **Do NOT power VIN and USB at the same time.** When debugging via USB-C, disconnect VIN.
 
-1. Отключить питание полностью (KCD3 OFF), подождать 10 сек
-2. Оставить только: ESP32 + TCA9548A (без IMU/AS5600/VL53L1X)
-3. Запустить сканер: должен находиться только `0x70`
-4. Подключать датчики **по одному каналу** в порядке CH0 → CH1 → CH2, после каждого шага запускать сканер
-5. Канал, после которого появилась ошибка, считать дефектным: заменить провод/разъём/датчик на этом канале
+### 5.4. What can/can't go through the breadboard
 
-Критерий выхода из rollback:
-- 3 последовательных запуска сканера без потери адресов
-- нет ложных адресов на пустых каналах
+The breadboard is a signal/distribution bus, not a power bus. OK to route:
+- GPIO signals (PWM, UART, I2C)
+- Sensor 3.3 V supplies
+- The single star-GND node
 
-✅ **Чеклист этапа 6:**
-- [ ] TCA9548A отвечает на адресе 0x70
-- [ ] Pull-up 4.7 кОм на SDA и SCL главной шины
-- [ ] Все подключённые датчики видны сканером на правильных каналах
-- [ ] Провода I2C < 30 см
+Do NOT route:
+- Motor power (7.4 V → BTS7960)
+- Servo 5 V under load (up to 2.5 A)
+- Any line >0.5 A
+
+Recommendation: run the servo's 5 V on its **own pair** straight from LM2596, with a 470-1000 µF electrolytic close to the servo.
+
+✅ **Stage 5 checklist:**
+- [ ] ESP32-S3 powers on at 5 V (status LED present)
+- [ ] Serial Monitor talks at 115200 baud
+- [ ] Common GND verified (multimeter shows 0 Ω between every GND)
+- [ ] ESP32-S3 mounted >5 cm from motor
 
 ---
 
-## Этап 7: Энкодеры AS5600
+## Stage 6: Dual I2C buses
 
-> ⏱️ 3-4 часа | 🔴 Сложная — самый ответственный механический этап
+> ⏱️ ~2 hours | 🟡 Medium
 
-### 7.1. Принцип работы
+### 6.1. Why two buses (instead of a TCA9548A mux)
 
-AS5600 — 12-битный магнитный энкодер. Магнит (Ø6мм, диаметрально намагниченный) крепится на вращающейся оси. AS5600 считывает через Hall-эффект → даёт **4096 позиций** за один оборот.
+The v11 build used a TCA9548A I2C multiplexer to share the bus across two AS5600 encoders (both fixed at `0x36`) and two VL53L1X sensors (both default `0x29`). **The mux burned out and is gone.** v13 takes a different approach:
 
-### 7.2. Установка магнитов
+- **AS5600 conflict** is solved by the bus split — one AS5600 on `Wire` (I2C0), the other on `Wire1` (I2C1). The ESP32-S3 has two native I2C peripherals.
+- **VL53L1X conflict** is solved at boot via XSHUT pins: hold every VL53L1X in reset, bring them up one at a time, and rewrite each one's I2C address in RAM.
 
-> **⛔ Самый сложный механический этап!** Магнит должен быть **точно над центром чипа** AS5600 на расстоянии **0.5-3 мм**. Смещение > 1мм от центра → невалидные данные.
+### 6.2. I2C0 wiring (Wire)
 
-**Для каждого энкодера (левый CH1, правый CH2):**
+| ESP32-S3 pin | Signal | Devices on this bus |
+|:------------:|--------|---------------------|
+| **GPIO 8** | SDA | ICM-20948 (0x68) + AS5600 Left (0x36) + VL53L1X Front (0x29 → 0x30) |
+| **GPIO 9** | SCL | same |
 
-1. Определить ось, вращающуюся пропорционально колесу (полуось/карданный вал)
-2. Приклеить магнит Ø6мм на **торец оси**:
-   - Суперклей **маленькая капля** (клей не должен попасть на грань магнита, обращённую к чипу)
-   - Или двусторонний скотч 3M тонкий
-3. Закрепить плату AS5600 **напротив магнита** на расстоянии **1-2 мм**
-4. **Тест:** вращать колесо рукой → значение AS5600 должно **плавно** меняться 0→4095→0
+### 6.3. I2C1 wiring (Wire1)
 
-### 7.3. Подключение
+| ESP32-S3 pin | Signal | Devices on this bus |
+|:------------:|--------|---------------------|
+| **GPIO 11** | SDA | AS5600 Right (0x36) + VL53L1X Side (0x29 → 0x31) |
+| **GPIO 12** | SCL | same |
 
-| AS5600 пин | Куда | Примечание |
-|:----------:|------|------------|
-| VCC | 3.3V | От LM2596 #2 |
-| GND | GND общий | |
-| SDA | TCA CH1/CH2 SDA | Через мультиплексор |
-| SCL | TCA CH1/CH2 SCL | Через мультиплексор |
-| DIR | GND или N/C | Направление счёта |
+### 6.4. Pull-ups (mandatory)
 
-### 7.4. Проверка в коде
+> The ESP32-S3 internal pull-ups are weak (~45 kΩ). At 400 kHz with >10 cm wires they're not enough.
 
-Загрузить сканер и в Serial Monitor вывести `readEncoder(1)` / `readEncoder(2)`. При вращении колеса:
-- ✅ **Хорошо:** значение плавно нарастает 0 → 500 → 1000 → ... → 4095 → 0
-- ⛔ **Плохо:** скачки более чем на 100 за один тик → магнит слишком далеко или не центрирован
+Each I2C bus needs **4.7 kΩ pull-ups**:
+- **SDA → 3.3 V**
+- **SCL → 3.3 V**
 
-### 7.5. Recovery / rollback магнитов AS5600
+Many breakout boards already have these populated. Verify with a meter before adding more — too many in parallel pulls the bus too hard. Aim for ~2.5 kΩ effective.
 
-Если данные энкодера невалидны (скачки, периодические -1, резкие обрывы одометрии):
+> Wire length: keep each bus under ~30 cm. If you must go longer, drop `Wire.setClock()` from 400000 to 100000.
 
-1. Отключить питание
-2. Снять плату AS5600 и аккуратно удалить магнит пинцетом
-3. Удалить остатки клея с торца оси (изопропиловый спирт)
-4. Поставить новый магнит по центру оси, зазор 1-2 мм, повторить тест из п. 7.4
-5. Если проблема сохраняется: поменять местами датчики CH1/CH2
+### 6.5. Diagnostic — run the dual-bus I2C scanner
 
-Интерпретация симптомов:
-- смещение магнита: скачки значения >100 за один тик
-- слишком большой зазор: периодические провалы, потеря считывания
-- слабая фиксация: на вибрации появляются случайные ошибки и SAFE STOP по энкодеру
+1. In `wro_build_target.h`, set `WRO_ACTIVE_TARGET = 2` (`WRO_TARGET_SCAN_I2C`).
+2. Flash and open Serial Monitor at 115200.
+3. Expected output (BEFORE VL53L1X are remapped — the scanner runs before the main firmware):
+```
+=== I2C0 (Wire) ===
+  0x68 -- ICM-20948 IMU (AD0 -> GND)
+  0x36 -- AS5600 magnetic encoder
+  0x29 -- VL53L1X (default - pre-remap)
 
-✅ **Чеклист этапа 7:**
-- [ ] CH1 (0x36) — левый энкодер виден сканером
-- [ ] CH2 (0x36) — правый энкодер виден сканером
-- [ ] Левое колесо: значение плавно меняется при вращении рукой
-- [ ] Правое колесо: значение плавно меняется при вращении рукой
-- [ ] Магниты надёжно закреплены (потрясти робота — не отваливаются)
+=== I2C1 (Wire1) ===
+  0x36 -- AS5600 magnetic encoder
+  0x29 -- VL53L1X (default - pre-remap)
+```
+
+> **0x70** = TCA9548A mux. If you see that, you're scanning the wrong board (the mux is gone in v13).
+
+### 6.6. Recovery / rollback procedure
+
+If the bus is unstable after two scanner runs, fall back to a minimal config:
+1. Power off (KCD3 OFF), wait 10 s.
+2. Disconnect the AS5600 / VL53L1X — leave only the ICM-20948 on I2C0.
+3. Run the scanner — only `0x68` should appear.
+4. Add devices **one at a time** in this order: AS5600 Left, VL53L1X Front (I2C0), AS5600 Right (I2C1), VL53L1X Side (I2C1). Run the scanner after each addition.
+5. Whichever device drops other devices off the bus = the one with the wiring fault.
+
+Pass criterion: 3 consecutive scans with stable address lists.
+
+✅ **Stage 6 checklist:**
+- [ ] I2C0 scanner finds 0x68 + 0x36 + 0x29
+- [ ] I2C1 scanner finds 0x36 + 0x29
+- [ ] 4.7 kΩ pull-ups present on both buses
+- [ ] No 0x70 (mux is supposed to be gone)
+- [ ] Wires under 30 cm
 
 ---
 
-## Этап 8: IMU (ICM-20948)
+## Stage 7: AS5600 encoders
 
-> ⏱️ ~2 часа | 🟡 Средняя сложность
+> ⏱️ 3-4 hours | 🔴 Hardest mechanical step
 
-### 8.1. Подключение GY-ICM20948V2
+### 7.1. How AS5600 works
 
-| IMU пин | Куда | Примечание |
-|:-------:|------|------------|
-| VCC | 3.3V | ⚠️ Не 5V! |
+AS5600 is a 12-bit magnetic encoder. A diametrically magnetized Ø6 mm magnet glued to a rotating shaft is read via Hall sensors → 4096 positions per revolution.
+
+### 7.2. Magnet mounting
+
+> ⛔ **The hardest mechanical step.** The magnet must sit **directly above the chip center**, with a **0.5-3 mm air gap**. >1 mm offset from center = invalid data.
+
+Per encoder (Left → I2C0, Right → I2C1):
+
+1. Find a shaft that rotates in lock-step with the wheel (half-shaft / drive cup).
+2. Glue the Ø6 mm magnet to the **end of the shaft**:
+   - Tiny drop of super glue (don't get glue on the face that talks to the chip), or
+   - Thin 3M double-sided tape.
+3. Mount the AS5600 PCB **facing the magnet**, 1-2 mm gap.
+4. **Test:** rotate the wheel by hand; the AS5600 reading should sweep smoothly 0 → 4095 → 0.
+
+### 7.3. Wiring (one per bus)
+
+| AS5600 pin | Goes to (Left enc) | Goes to (Right enc) |
+|:----------:|--------------------|--------------------|
+| VCC | 3.3 V | 3.3 V |
+| GND | Common GND | Common GND |
+| SDA | ESP32-S3 **GPIO 8** (I2C0) | ESP32-S3 **GPIO 11** (I2C1) |
+| SCL | ESP32-S3 **GPIO 9** (I2C0) | ESP32-S3 **GPIO 12** (I2C1) |
+| DIR | GND or floating | GND or floating |
+
+### 7.4. Sanity-check in firmware
+
+Set `WRO_ACTIVE_TARGET = 8` (`WRO_TARGET_TEST_ENCODERS`), flash, and watch Serial. While turning each wheel by hand:
+- ✅ raw value sweeps 0 → 500 → 1000 → ... → 4095 → 0 smoothly
+- ⛔ jumps >100 ticks per sample = magnet too far away or off-center
+
+### 7.5. Magnet recovery / rollback
+
+If readings are noisy (jumps, periodic -1, sudden odometry resets):
+1. Power off.
+2. Pull the AS5600 PCB and gently remove the magnet with tweezers.
+3. Clean glue residue with isopropyl alcohol.
+4. Re-glue the magnet centered, 1-2 mm gap, retest.
+5. If the issue stays, swap the Left and Right modules — that proves whether the fault is in the PCB or the mount.
+
+Symptom dictionary:
+- jumps >100 / sample → magnet off-center
+- periodic dropouts → gap too large
+- random `SAFE_STOP` from encoder fail-counter → poor mechanical fixation, magnet shifts under vibration
+
+✅ **Stage 7 checklist:**
+- [ ] Left encoder visible at 0x36 on I2C0
+- [ ] Right encoder visible at 0x36 on I2C1
+- [ ] Left wheel: smooth value change when rotating by hand
+- [ ] Right wheel: smooth value change when rotating by hand
+- [ ] Magnets are firmly attached (shake the robot — they should not move)
+
+---
+
+## Stage 8: IMU (ICM-20948)
+
+> ⏱️ ~2 hours | 🟡 Medium
+
+### 8.1. GY-ICM20948V2 wiring (v13: AD0 → GND)
+
+| IMU pin | Goes to | Note |
+|:-------:|---------|------|
+| VCC | 3.3 V | ⚠️ Not 5 V! |
 | GND | GND | |
-| SDA | TCA **CH0** SDA | Канал 0 = IMU |
-| SCL | TCA **CH0** SCL | |
-| AD0 | **3.3V** | Адрес = 0x69 |
+| SDA | ESP32-S3 **GPIO 8** (I2C0) | shares the bus with AS5600 Left + VL53L1X Front |
+| SCL | ESP32-S3 **GPIO 9** (I2C0) | |
+| AD0 | **GND** | Address = 0x68 |
 
-> **⚠️ AD0 должен быть к 3.3V!** Код ожидает адрес **0x69**. Если AD0 = GND → адрес 0x68 → `icm.begin_I2C()` вернёт ошибку.
+> ⚠️ AD0 must go to **GND**. The v13 firmware expects **0x68**. (v11 used 0x69 with AD0 = VCC; the convention changed during the v12/v13 work.)
 
-### 8.2. Физическая установка
+### 8.2. Mounting
 
-1. Закрепить IMU **горизонтально** (ось Z ↑ вверх)
-2. Ось X направить **вперёд** по ходу движения
-3. **Виброизоляция (ОБЯЗАТЕЛЬНО):** поролон 3мм + двусторонний скотч 3M
+1. Mount the IMU **horizontally** (Z axis up).
+2. X axis points **forward**.
+3. **Vibration isolation (mandatory):** 3 mm foam + 3M tape between IMU and chassis.
 
-> Без виброизоляции гироскоп дрейфует в **3-5 раз быстрее** от вибрации мотора 380.
+> Without isolation the gyro drifts 3-5× faster from motor vibration.
 
-### 8.3. Калибровка гироскопа
+### 8.3. Gyro calibration
 
-Автоматическая в прошивке (`calibrateGyro()` при старте):
-- Робот стоит **неподвижно** 3 секунды
-- Усреднение 300 значений Z-оси
-- Результат `gyroZbias` → если bias > 0.05, подозрение на вибрацию
+Automatic at boot (`imu_calibrate_gyro()`):
+- Robot stays still for 3 seconds.
+- Averages 300 Z-axis samples.
+- Result is `gyroZbias`. If bias > 0.05 you have vibration.
 
-### 8.4. Recovery / rollback IMU
+### 8.4. IMU recovery / rollback
 
-Если IMU не проходит проверку или дрейфует:
+If the IMU misbehaves:
+1. Verify VCC = 3.3 V, AD0 = GND, address = 0x68.
+2. Recalibrate with the robot fully still (wheels off the ground).
+3. Disconnect the motor temporarily and recalibrate to isolate vibration.
 
-1. Проверить питание и адрес: VCC=3.3V, AD0=3.3V, адрес 0x69
-2. Повторить калибровку на неподвижном роботе (колёса не должны касаться пола)
-3. Временно отключить мотор и повторить калибровку
+Roll-back rules:
+- `gyroZbias > 0.05` two runs in a row → revisit the foam isolation
+- Static yaw drift >2°/30 s → replace the I2C wires and shorten them
+- IMU drops off the scanner intermittently → redo Stage 6.6
 
-Критерии отката:
-- если `gyroZbias > 0.05` два запуска подряд: повторить монтаж на более мягкой вибропрокладке
-- если в статике дрейф yaw > 2° за 30 секунд: заменить провод IMU и сократить длину I2C
-- если IMU периодически пропадает в сканере: откатиться к процедуре `6.7` и переобжать разъёмы CH0
-
-✅ **Чеклист этапа 8:**
-- [ ] IMU виден на CH0 (адрес 0x69)
-- [ ] `calibrateGyro()` bias < 0.05
-- [ ] При повороте робота рукой yawAngle плавно меняется в Serial Monitor
-- [ ] IMU на виброизоляции, горизонтально, ось X вперёд
-
----
-
-## Этап 9: Камера OpenMV H7 Plus
-
-> ⏱️ ~2 часа | 🟡 Средняя сложность
-
-### 9.1. Подключение UART (ESP32 ↔ OpenMV)
-
-| OpenMV пин | ESP32 пин | Описание |
-|:----------:|:---------:|----------|
-| **P4 (TX)** | **GPIO16 (RX)** | Камера передаёт → ESP32 принимает |
-| **P5 (RX)** | **GPIO17 (TX)** | ESP32 передаёт → камера принимает |
-| **GND** | **GND** | Общая земля |
-| **VIN** | **5V** от LM2596 #1 | Питание камеры |
-
-> **⛔ TX ↔ RX перекрёстное подключение!** TX камеры идёт на RX контроллера и наоборот. Если подключить TX→TX — данные просто не пойдут (но ничего не сгорит).
-
-> **Уровни напряжений:** OpenMV H7 Plus = 3.3V логика. ESP32 тоже 3.3V. Преобразователь уровней для UART **НЕ нужен**.
-
-### 9.2. Физическая установка камеры
-
-Правильная установка камеры — **ключ к успешному детектированию** объектов:
-
-| Параметр | Значение | Почему |
-|----------|:--------:|--------|
-| **Высота** камеры от пола | **8-12 см** | Оптимально видит и столбы и линии |
-| **Наклон** вниз от горизонта | **10-15°** (~12° идеально) | Баланс: видим далёкие столбы + линии на полу |
-| **Ориентация** | Объектив смотрит вперёд | По ходу движения робота |
-| **Фиксация** | Жёсткая! 3M + стяжка | Любая вибрация = дрожание кадра = ложные детекции |
-
-**Что будет при неправильном угле:**
-- Слишком горизонтально → не видит оранжевую/синюю линию на полу
-- Слишком вниз → не видит далёкие столбы (>60см)
-- Камера вибрирует → blob-ы «прыгают», PID дёргает рулём
-
-### 9.3. Прошивка OpenMV (предварительная)
-
-1. Подключить OpenMV к компьютеру через **USB** (не через UART!)
-2. Открыть **OpenMV IDE**
-3. Открыть `src/openmv/openmv_main.py`
-4. **⛔ НЕ сохранять на камеру сейчас!** Сначала нужна калибровка порогов (Этап 15)
-5. Пока можно нажать ▶ (Run) для теста — в Frame Buffer должна быть картинка
-
-✅ **Чеклист этапа 9:**
-- [ ] OpenMV IDE видит камеру через USB
-- [ ] В Frame Buffer отображается живое изображение
-- [ ] UART: в Serial Monitor ESP32 появляются какие-либо данные (пусть пока мусорные)
-- [ ] Камера жёстко закреплена — не вибрирует при постукивании по шасси
-- [ ] Высота 8-12 см, наклон ~12° вниз
-- [ ] 📸 Фото установленной камеры (для v-photos/)
+✅ **Stage 8 checklist:**
+- [ ] IMU visible at 0x68 on I2C0
+- [ ] `imu_calibrate_gyro()` bias < 0.05
+- [ ] Yaw moves smoothly when you rotate the robot by hand
+- [ ] IMU is on foam, level, X axis forward
 
 ---
 
-## Этап 10: VL53L1X ToF (опционально)
+## Stage 9: OpenMV H7 Plus camera
 
-> ⏱️ ~1 час | 🟢 Лёгкая сложность
->
-> Этот этап **можно пропустить** — код работает без них (`#ifdef USE_VL53L1X`). Добавите позже когда получите датчики.
+> ⏱️ ~2 hours | 🟡 Medium
 
-### 10.1. Установка
+### 9.1. UART2 wiring (ESP32-S3 ↔ OpenMV)
 
-**Фронтальный (TCA CH3):**
-- Закрепить на передней части шасси, лазер смотрит **горизонтально вперёд**
-- Высота: **3-5 см** от пола
-- Должен «видеть» стену прямо перед роботом
+| OpenMV pin | ESP32-S3 pin | Description |
+|:----------:|:------------:|-------------|
+| **P4 (TX)** | **GPIO 17 (RX)** | Camera transmits → ESP32-S3 receives |
+| **P5 (RX)** | **GPIO 18 (TX)** | ESP32-S3 transmits → camera receives |
+| **GND** | **GND** | Common ground |
+| **VIN** | **5 V from LM2596 #1** | Camera power |
 
-**Боковой (TCA CH4):**
-- Закрепить на правом (или левом) борту, лазер смотрит **вбок перпендикулярно**
-- Высота: **3-5 см** от пола
-- Используется для парковки вдоль стены
+> ⛔ **TX ↔ RX must be crossed!** TX → TX won't fry anything but no data flows.
+> Levels: OpenMV H7 Plus is 3.3 V logic; ESP32-S3 is 3.3 V; **no level shifter needed**.
 
-### 10.2. Подключение
+### 9.2. Mounting
 
-| VL53L1X пин | Куда | Примечание |
-|:-----------:|------|------------|
-| VIN | 3.3V | От LM2596 #2 |
-| GND | GND общий | |
-| SDA | TCA CH3 или CH4 SDA | Через мультиплексор |
-| SCL | TCA CH3 или CH4 SCL | Через мультиплексор |
-| XSHUT | Не подключен | Внутренний pull-up |
-| GPIO1 | Не подключен | Прерывание (не используем) |
+| Parameter | Value | Why |
+|-----------|:-----:|-----|
+| Camera height above floor | **8-12 cm** | Sees both pillars and lines |
+| Downtilt | **10-15°** (12° ideal) | Far pillars + nearby lines |
+| Orientation | Lens forward | Direction of travel |
+| Fixation | Rigid! 3M + zip tie | Vibration → blob jitter → false detections |
 
-### 10.3. Библиотека
+What goes wrong with bad mounting:
+- Too horizontal → can't see orange/blue lines on the floor
+- Too steep → can't see far pillars (>60 cm)
+- Vibration → blobs "jump" → PID jitters the steering
 
-Arduino IDE → Library Manager → `VL53L1X` → установить **Pololu VL53L1X**
+### 9.3. Loading the OpenMV firmware
 
-### 10.4. Если VL53L1X не подключены
+1. Connect OpenMV to a computer over **USB** (not UART).
+2. Open OpenMV IDE.
+3. Open `src/openmv/openmv_main.py`.
+4. ⛔ Don't save to the camera yet — calibrate the thresholds first (Stage 15).
+5. Press ▶ to test — you should see live frame buffer output.
 
-В v12 этого делать не нужно — TFMini-S front уже не на I2C шине. Если откатываетесь на v11 reference (`legacy_eps323.cpp`), закомментировать строку:
+✅ **Stage 9 checklist:**
+- [ ] OpenMV IDE sees the camera over USB
+- [ ] Frame buffer shows live image
+- [ ] UART: anything (even noise) reaches ESP32-S3 Serial Monitor
+- [ ] Camera is rigid, no rattle when you tap the chassis
+- [ ] 8-12 cm height, ~12° downtilt
+- [ ] 📸 Camera mount photo for `v-photos/`
+
+---
+
+## Stage 10: VL53L1X ToF sensors
+
+> ⏱️ ~2 hours | 🟡 Medium
+
+### 10.1. Mounting
+
+**Front sensor (I2C0):**
+- Front of the chassis, laser pointing **horizontally forward**
+- Height: 3-5 cm above floor
+- Sees the wall directly ahead — feeds the corner-detection FSM
+
+**Side sensor (I2C1):**
+- Right (or left) side of the chassis, laser pointing perpendicular to travel
+- Height: 3-5 cm above floor
+- Wall-following on Open Challenge straights
+
+### 10.2. Wiring
+
+Each VL53L1X needs an XSHUT pin so the firmware can hold it in reset during the boot-time address-remap dance.
+
+| VL53L1X pin | Front | Side |
+|:-----------:|-------|------|
+| VIN | 5 V | 5 V |
+| GND | Common GND | Common GND |
+| SDA | ESP32-S3 GPIO 8 (I2C0) | ESP32-S3 GPIO 11 (I2C1) |
+| SCL | ESP32-S3 GPIO 9 (I2C0) | ESP32-S3 GPIO 12 (I2C1) |
+| **XSHUT** | ESP32-S3 **GPIO 15** | ESP32-S3 **GPIO 16** |
+| GPIO1 (interrupt) | floating | floating |
+
+The third XSHUT pin (`GPIO 47`) is reserved for an optional 3rd VL53L1X on I2C0.
+
+### 10.3. Library
+
+Arduino IDE → Library Manager → search `VL53L1X` → install **VL53L1X by Pololu**.
+
+### 10.4. Test
+
+Set `WRO_ACTIVE_TARGET = 9` (`WRO_TARGET_TEST_VL53L1X`), flash, open Serial Monitor. Both sensors should report distances in mm. Wave a hand 20 cm away → ~200 mm.
+
+✅ **Stage 10 checklist:**
+- [ ] Front and side VL53L1X visible **after the boot-time remap** at 0x30 (front) and 0x31 (side)
+- [ ] Distances change smoothly when you wave a hand near each sensor
+- [ ] XSHUT pins are wired (not floating)
+
+---
+
+## Stage 11: E-Stop button
+
+> ⏱️ ~30 minutes | 🟢 Easy
+
+### 11.1. Wiring
+
+Simple: a push-button between **GPIO 21** and **GND**:
+```
+3.3V ──[ESP32-S3 internal pull-up]── GPIO 21 ──[BUTTON]── GND
+```
+The firmware uses `INPUT_PULLUP`:
+- Released → GPIO 21 = HIGH
+- Pressed → GPIO 21 = LOW → E-Stop active
+
+> Add a 10 kΩ pull-up to 3.3 V if you want belt-and-braces, but the internal pull-up is normally enough.
+
+### 11.2. How E-Stop behaves in the firmware
+
+| Action | Robot reaction |
+|--------|----------------|
+| Press in `RS_INIT` | LED arms / fast blink |
+| Release in `RS_INIT` | 🏁 **Race starts** — transition to `RS_RUN_*` |
+| Press during the race | ⛔ Motor 0, steering centered, `RS_SAFE_STOP` |
+| Release during the race | ▶️ Resume to the previous running state |
+
+500 ms boot grace prevents a held button at power-up from arming the robot.
+
+### 11.3. Mode selection (compile-time only — Rule 9.9)
+
+For v13: edit `src/esp32/wro_config_v13.h`:
 ```cpp
-// #define USE_VL53L1X   ← закомментировать
+#define OBSTACLE_MODE  0   // 0 = Open Challenge, 1 = Obstacle Challenge
 ```
-Код будет работать без ToF, используя камеру для детекции стен.
 
-✅ **Чеклист этапа 10:**
-- [ ] VL53L1X видны сканером (CH3: 0x29, CH4: 0x29) — или пункт пропущен
-- [ ] Рукой на 20 см — дистанция в Serial ~200мм
-- [ ] Если не подключены — `USE_VL53L1X` закомментирован в коде
+✅ **Stage 11 checklist:**
+- [ ] Button press → Serial logs the E-Stop transition
+- [ ] Release → race starts / resumes
+- [ ] Button is reachable from outside the robot
+- [ ] Mode is set via `#define`, no physical switches
 
 ---
 
-## Этап 11: Кнопка E-STOP
+## Stage 12: Status LED
 
-> ⏱️ ~30 минут | 🟢 Лёгкая сложность
+> ⏱️ ~15 minutes | 🟢 Easy
 
-### 11.1. Схема подключения (GPIO32)
-
-Простой вариант — кнопка между GPIO32 и GND:
+### 12.1. Wiring
 
 ```
-3.3V ──[внутренний pull-up ESP32]── GPIO32 ──[КНОПКА]── GND
+ESP32-S3 GPIO 2 ──[220 Ω]──[LED anode (+)]──[LED cathode (−)]── GND
 ```
 
-Код использует `INPUT_PULLUP`, поэтому:
-- **Кнопка НЕ нажата** → GPIO32 = HIGH (3.3V)
-- **Кнопка нажата** → GPIO32 = LOW (GND) → E-STOP активен
+Use a bright LED (blue or white) — needs to be visible from 2+ meters.
 
-> Для надёжности можно добавить **внешний pull-up 10кОм** с GPIO32 на 3.3V, но внутреннего pull-up ESP32 обычно достаточно.
+### 12.2. Signal map
 
-### 11.2. Как работает E-STOP в прошивке
+| LED behavior | Robot state | Meaning |
+|:------------:|-------------|---------|
+| Slow blink (~1 Hz) | `RS_INIT` / `RS_WAIT_START` | Press + release E-Stop to start |
+| Solid on | `RS_RUN_OPEN` / `RS_RUN_OBS` | Race in progress |
+| Fast blink (~4 Hz) | `RS_FINISH` | 🏁 Done after 3 laps |
+| Off | `RS_SAFE_STOP` | E-Stop held / fault |
 
-| Действие | Реакция робота |
-|----------|----------------|
-| **Нажать** E-STOP в STATE_INIT | LED начинает быстро мигать (готовность) |
-| **Отпустить** E-STOP в STATE_INIT | 🏁 **Гонка началась!** Переход в STATE_TRACKING |
-| **Нажать** во время гонки | ⛔ Мотор = 0, руль = центр, STATE_SAFE_STOP |
-| **Отпустить** во время гонки | ▶️ Продолжение гонки, STATE_TRACKING |
-
-### 11.3. Выбор режима (программный)
-
-> **WRO Правило 9.9:** физические переключатели режима **запрещены**.
-
-Для v12: в `src/esp32/wro_config_v12.h` установить `#define OBSTACLE_MODE 0` (Open) или `1` (Obstacle). Для v11 reference (`legacy_eps323.cpp`, строка 48):
-```cpp
-#define OBSTACLE_CHALLENGE_MODE    // ← раскомментировать для Obstacle
-// #define OBSTACLE_CHALLENGE_MODE // ← закомментировать для Open
-```
-
-✅ **Чеклист этапа 11:**
-- [ ] Кнопка E-STOP: нажатие → Serial «E-STOP АКТИВИРОВАН»
-- [ ] Отпускание → Serial «ПРОДОЛЖЕНИЕ ГОНКИ»
-- [ ] Кнопка доступна снаружи робота (не закрыта деталями)
-- [ ] Режим установлен через `#define` в коде
+✅ **Stage 12 checklist:**
+- [ ] LED on at GPIO 2 = HIGH
+- [ ] LED off at GPIO 2 = LOW
+- [ ] Visible from 2+ m
 
 ---
 
-## Этап 12: LED индикатор
+## Stage 13: Final wire dressing
 
-> ⏱️ ~15 минут | 🟢 Лёгкая сложность
-
-### 12.1. Подключение
-
-```
-ESP32 GPIO2 ──[резистор 220Ом]──[LED анод (+)]──[LED катод (−)]── GND
-```
-
-Используйте **яркий LED** (синий или белый) — нужно видеть состояние с 2+ метров.
-
-### 12.2. Таблица сигналов
-
-| Поведение LED | Состояние робота | Что делать |
-|:-------------:|------------------|------------|
-| Мигает медленно (~1 Гц) | STATE_INIT — ждёт старт | Нажать → отпустить E-STOP |
-| Горит постоянно | STATE_TRACKING — гонка | Наблюдать |
-| Мигает быстро (~4 Гц) | STATE_FINISH — финиш | 🏁 Робот завершил 3 круга |
-| Не горит | STATE_SAFE_STOP | E-STOP нажат / ошибка |
-
-✅ **Чеклист этапа 12:**
-- [ ] LED светит при HIGH на GPIO2
-- [ ] LED не горит при LOW
-- [ ] Виден с расстояния 2+ метров
-
----
-
-## Этап 13: Финальная сборка проводки
-
-> ⏱️ 2-3 часа | 🟡 Средняя сложность
+> ⏱️ 2-3 hours | 🟡 Medium
 >
-> **⚠️ Неаккуратная проводка — причина 80% проблем на соревнованиях.** Потратьте время сейчас — сэкономите нервы на WRO.
+> ⚠️ Sloppy wiring causes 80% of competition failures. Spend the time now.
 
-### 13.1. Правила разводки
+### 13.1. Routing rules
 
-| Правило | Почему |
-|---------|--------|
-| **Силовые и сигнальные провода НЕ параллельно** | EMI наводки от 7.4V/8A линии на I2C |
-| Силовые (LiPo→BTS→мотор) по **одной** стороне шасси | Изолировать помехи |
-| Сигнальные (I2C, UART, PWM) по **другой** стороне | Чистый сигнал |
-| Кабельные стяжки **каждые 5-7 см** | Вибрация не дёргает провода |
-| **Слабина** на проводах к рулевому серво | Руль поворачивается — провод не должен натягиваться |
+| Rule | Why |
+|------|-----|
+| Power and signal wires NOT parallel | EMI from 7.4 V/8 A line couples into I2C |
+| Power (LiPo → BTS → motor) on **one** side of the chassis | Isolate noise |
+| Signal (I2C, UART, PWM) on the **other** side | Clean signal |
+| Cable tie every 5-7 cm | Vibration won't yank connectors |
+| Slack on the steering servo wires | Servo turns — wires must not pull |
 
-### 13.2. Защита от вибрации
+### 13.2. Vibration-proofing
 
-1. Все Dupont-разъёмы — **капля горячего клея** на стыке (предотвращает отход)
-2. Каждый паяный провод — подёргать рукой (тест на обрыв)
-3. Макетная плата — скотч 3M **+ кабельная стяжка** через крепёжные отверстия
+1. Every Dupont connector — drop of hot glue at the joint.
+2. Tug-test every soldered wire.
+3. Breadboard fixed with both 3M tape and a cable tie through the mounting holes.
 
-### 13.3. Финальная прозвонка мультиметром
+### 13.3. Final continuity check
 
-| # | Тест | Ожидание | Если не так |
-|:-:|------|:--------:|-------------|
-| 1 | КЗ: 7.4V+ ↔ GND | Нет (∞) | ⛔ Найти замыкание! |
-| 2 | КЗ: 5V+ ↔ GND | Нет (∞) | ⛔ |
-| 3 | КЗ: 3.3V+ ↔ GND | Нет (∞) | ⛔ |
-| 4 | GND всех компонентов | 0 Ом между собой | Нет общей GND → исправить |
-| 5 | SDA ↔ SCL | Не замкнуты | Перепутаны провода |
+| # | Test | Expected | If wrong |
+|:-:|------|:--------:|----------|
+| 1 | Short: 7.4 V+ ↔ GND | open | ⛔ Find and remove |
+| 2 | Short: 5 V+ ↔ GND | open | ⛔ |
+| 3 | Short: 3.3 V+ ↔ GND | open | ⛔ |
+| 4 | All component GNDs | 0 Ω among them | No common GND — fix |
+| 5 | SDA ↔ SCL on each bus | not shorted | Wires crossed |
 
-✅ **Чеклист этапа 13:**
-- [ ] Силовые и сигнальные провода разведены по разным сторонам
-- [ ] Все провода зафиксированы стяжками
-- [ ] Нет висящих/болтающихся проводов
-- [ ] Нет КЗ (мультиметр подтверждает)
-- [ ] Dupont-разъёмы закреплены горячим клеем
-- [ ] 📸 Фото финальной проводки
+✅ **Stage 13 checklist:**
+- [ ] Power and signal wires routed on opposite sides
+- [ ] All wires zip-tied
+- [ ] No dangling conductors
+- [ ] No shorts
+- [ ] Dupont connectors hot-glued
+- [ ] 📸 Final harness photo
 
 ---
 
-## Этап 14: Прошивка ПО
+## Stage 14: Firmware flashing
 
-> ⏱️ ~2 часа | 🟡 Средняя сложность
+> ⏱️ ~2 hours | 🟡 Medium
 
-### 14.1. Arduino IDE — настройка
+### 14.1. Arduino IDE setup
 
-**1. ESP32 Board Package:**
-- File → Preferences → Additional Board Manager URLs:
-  `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
-- Tools → Board Manager → `esp32` by Espressif → установить
+1. **ESP32 board package:**
+   - File → Preferences → Additional Board Manager URLs:
+     `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+   - Tools → Board Manager → install `esp32` by Espressif (v3.x).
+2. **Libraries:**
+   - `ESP32Servo`
+   - `Adafruit ICM20948`
+   - `Adafruit Unified Sensor`
+   - `VL53L1X` by Pololu
+   - (AS5600 driver is inline in `as5600_dual_i2c.h` — no library install needed)
+3. **Board settings:**
 
-**2. Библиотеки (Library Manager):**
-- `ESP32Servo`
-- `Adafruit ICM20948`
-- `Adafruit Unified Sensor`
-- `VL53L1X` by Pololu (если используете ToF)
-
-**3. Настройки платы:**
-
-| Параметр | Значение |
-|----------|----------|
-| Board | ESP32 Dev Module |
+| Setting | Value |
+|---------|-------|
+| Board | **ESP32S3 Dev Module** |
+| USB CDC On Boot | **Enabled** |
 | Upload Speed | 921600 |
-| Flash Size | 4MB |
+| Flash Size | 8MB |
+| PSRAM | OPI PSRAM |
 | Partition Scheme | Default |
-| Port | *(выбрать порт ESP32)* |
+| Port | (your ESP32-S3 port) |
 
-### 14.2. Прошивка ESP32
+### 14.2. Flashing the ESP32-S3
 
-1. Для v12 открыть `src/esp32/wro_config_v12.h` (тюнинг) и `src/esp32/wro_hw_config_v12.h` (распиновка). Для v11 reference: `src/esp32/legacy_eps323.cpp`.
-2. Проверить настройки:
-   - `#define TICKS_PER_CM` — ваше измеренное значение (Этап 1)
-   - `#define SERVO_CENTER` — ваше значение (Этап 4)
-   - `#define OBSTACLE_CHALLENGE_MODE` — раскомментировать/закомментировать
-   - `#define USE_VL53L1X` — закомментировать если ToF не подключены
-3. **Compile** (Ctrl+R) — убедиться нет ошибок
-4. **Upload** (Ctrl+U)
-5. Serial Monitor (115200) — ожидаемый вывод:
+1. Open `src/esp32/` as a sketch in Arduino IDE.
+2. Verify `src/esp32/wro_hw_config_v13.h`:
+   - `TICKS_PER_CM` = your measured value (Stage 1)
+   - `SERVO_*_US` = your measured values (Stage 4 / sketch)
+3. Verify `src/esp32/wro_config_v13.h`:
+   - `OBSTACLE_MODE` = 0 (Open) or 1 (Obstacle)
+   - `HAS_SIDE_TOF` = 1 if side VL53L1X is wired
+4. In `src/esp32/wro_build_target.h`, ensure `WRO_ACTIVE_TARGET = WRO_TARGET_V13_MAIN` (= 11).
+5. **Compile** (Ctrl+R) — ensure no errors.
+6. **Upload** (Ctrl+U).
+7. Open Serial Monitor at 115200. Expected boot output:
 ```
-╔═══════════════════════════════════════╗
-║   WRO v10.0 CHAMPIONSHIP EDITION      ║
-╚═══════════════════════════════════════╝
-РЕЖИМ: OBSTACLE (ПРЕПЯТСТВИЯ)
-Калибровка гироскопа (3 сек)...
-Bias: 0.002345
-=== ГОТОВО ===
-НАЖМИ E-STOP → ОТПУСТИ → СТАРТ!
+============================================================
+ WRO FE 2026 -- Team Faith -- v13.0 main firmware
+ Mode: OPEN CHALLENGE
+ WiFi: OFF, BT: OFF (Rule 11.10)
+============================================================
+AS5600 dual I2C: OK
+VL53L1X FRONT: OK at 0x30
+VL53L1X SIDE:  OK at 0x31
+ICM-20948 IMU: OK
+Calibrating gyro Z bias............
+Gyro Z bias = 0.00234 rad/s
+System ready. Press E-Stop to start.
 ```
 
-### 14.3. Прошивка OpenMV
+### 14.3. Flashing the OpenMV
 
-1. Подключить OpenMV к компьютеру через USB
-2. Открыть OpenMV IDE
-3. Открыть `src/openmv/openmv_main.py`
-4. **Сначала** откалибровать пороги (Этап 15!)
-5. После калибровки: Tools → Save Script to OpenMV Cam → сохранить как `main.py`
-6. Камера начнёт работать автономно при следующем включении питания
+1. Connect OpenMV via USB.
+2. Open OpenMV IDE.
+3. Open `src/openmv/openmv_main.py`.
+4. **Calibrate thresholds first** (Stage 15.1).
+5. Tools → Save Script to OpenMV Cam → save as `main.py`. The camera will run autonomously on next power cycle.
 
-### 14.4. Integration Smoke Test (обязателен перед Этапом 15)
+### 14.4. Integration smoke test (mandatory before Stage 15)
 
-Цель: убедиться, что все подсистемы работают **вместе**, до тонкой калибровки.
+Goal: confirm every subsystem works **together** before fine calibration.
 
-1. Включить питание, дождаться `=== ГОТОВО ===` в Serial Monitor
-2. Проверить стартовую логику:
-   - E-STOP нажат/отпущен → состояние INIT/TRACKING меняется корректно
-3. Проверить аварийную остановку:
-   - нажать E-STOP во время движения → мотор 0, руль в центр
-4. Проверить камеру:
-   - при подключенной OpenMV идут валидные UART-пакеты
-   - отключить UART камеры: предупреждение по таймауту и переход в SAFE STOP
-5. Проверить подсчёт кругов в сухом режиме:
-   - в логах видны счётчики `lineLapCount/gyroLaps`
+1. Power on, wait for `System ready.` in Serial Monitor.
+2. Start logic: press + release the E-Stop → state transitions correctly INIT → WAIT_START → RUN.
+3. Emergency stop: press during a (wheels-up) run → motor 0, steering centered.
+4. Camera: with OpenMV connected, the firmware logs valid camera frames; if you unplug the camera, after `CAM_SILENT_DEGRADE_MS` you should see a warning.
+5. Lap counting (dry): turn the chassis by hand through 360°; the gyro lap counter should tick.
 
-Критерий PASS:
-- все пункты 1-5 выполнены без перезагрузки ESP32 и без потери I2C-датчиков
+Pass: every step works without an unexpected reboot or sensor dropout.
+Fail: revisit Stages 6-9 before continuing.
 
-Критерий FAIL:
-- при любом FAIL вернуться к этапам 6-9 и устранить проблему до начала Этапа 15
-
-✅ **Чеклист этапа 14:**
-- [ ] ESP32 прошит, Serial Monitor показывает «ГОТОВО»
-- [ ] Калибровка гироскопа выдаёт bias < 0.05
-- [ ] E-STOP нажать/отпустить — реакция в Serial
-- [ ] OpenMV IDE видит камеру
-- [ ] Integration Smoke Test пройден
+✅ **Stage 14 checklist:**
+- [ ] ESP32-S3 flashes without errors
+- [ ] Serial Monitor reports "System ready."
+- [ ] Gyro calibration `gyroZbias < 0.05`
+- [ ] E-Stop press/release reflected in Serial
+- [ ] OpenMV IDE sees the camera
+- [ ] Smoke test passes
 
 ---
 
-## Этап 15: Калибровка и первый запуск
+## Stage 15: Calibration and first run
 
-> ⏱️ 4-6 часов | 🔴 Сложная — самый важный этап!
+> ⏱️ 4-6 hours | 🔴 The most important stage
 
-### 15.1. Калибровка цветовых порогов (OpenMV)
+### 15.1. Color thresholds (OpenMV)
 
-> **⛔ Неправильные пороги = робот не видит столбы = врезается = DQ.**
-> Калибровать при **ТОМ ЖЕ освещении**, что будет на соревнованиях!
+> ⛔ Wrong thresholds → robot doesn't see pillars → crashes → DQ. Calibrate under the **same lighting** as the competition.
 
-**Порядок для каждого цвета:**
+For each color:
+1. Connect OpenMV via USB and open `openmv_main.py`.
+2. Place the robot near the target object.
+3. **Tools → Machine Vision → Threshold Editor**.
+4. Aim the camera at the target.
+5. Drag the L / A / B sliders until only the target shows up in the mask.
+6. Record (L_min, L_max, A_min, A_max, B_min, B_max) and paste into the matching `THRESHOLD_*` constant in the script.
 
-1. Подключить OpenMV к компьютеру, открыть `openmv_main.py`
-2. Поставить робота на трек (или рядом с объектами нужных цветов)
-3. **Tools → Machine Vision → Threshold Editor**
-4. Направить камеру на целевой объект
-5. Двигать ползунки **L, A, B** пока в маске не останется **ТОЛЬКО** нужный цвет
-6. Записать значения (L_min, L_max, A_min, A_max, B_min, B_max) в код
+| # | Color | Variable | Object |
+|:-:|:-----:|----------|--------|
+| 1 | 🟠 | `THRESHOLD_ORANGE` | Orange line on the mat |
+| 2 | 🔵 | `THRESHOLD_BLUE` | Blue line on the mat |
+| 3 | 🔴 | `THRESHOLD_RED` | Red pillar |
+| 4 | 🟢 | `THRESHOLD_GREEN` | Green pillar |
+| 5 | 🩷 | `THRESHOLD_MAGENTA` | Magenta parking block |
+| 6 | ⬛ | `THRESHOLD_WALL` | Black track wall |
 
-| # | Цвет | Переменная в коде | Объект для калибровки |
-|:-:|:----:|-------------------|----------------------|
-| 1 | 🟠 | `THRESHOLD_ORANGE` | Оранжевая полоска на мате |
-| 2 | 🔵 | `THRESHOLD_BLUE` | Синяя полоска на мате |
-| 3 | 🔴 | `THRESHOLD_RED` | Красный цилиндр на треке |
-| 4 | 🟢 | `THRESHOLD_GREEN` | Зелёный цилиндр на треке |
-| 5 | 🩷 | `THRESHOLD_MAGENTA` | Малиновый парковочный блок |
-| 6 | ⬛ | `THRESHOLD_WALL` | Чёрный борт трека |
+### 15.2. Focal-length constant
 
-### 15.2. Калибровка фокусной константы
+1. Place a red pillar exactly **20 cm** from the camera.
+2. Read raw `blob.w()` in the IDE.
+3. `FOCAL_CONST = 20 × blob.w()`.
+4. Update the constant in `openmv_main.py`.
 
-1. Поставить **красный столб** ровно на **20 см** от камеры
-2. Запустить скрипт, в IDE посмотреть raw `blob.w()` (ширина блоба)
-3. Вычислить: `FOCAL_CONST = 20 × blob.w()`
-4. Записать в `openmv_main.py` строку `FOCAL_CONST = _____`
+### 15.3. Odometry calibration
 
-### 15.3. Калибровка одометрии
+Test conditions:
+- Surface: flat mat / tile, no slope
+- Motion: straight line, no steering input
+- Distance: 100 cm with start/finish marks
 
-Условия теста:
-- поверхность: ровный мат/плитка без уклона
-- движение: строго по прямой, без поворота руля
-- дистанция: 100 см по рулетке с метками старта/финиша
+1. Mark the start position of one wheel.
+2. Run the robot 100 cm three times.
+3. Each run, record `Δ totalDistLeft` from Serial Monitor.
+4. `avg = (run1 + run2 + run3) / 3`
+5. `TICKS_PER_CM = avg / 100`
+6. Update `TICKS_PER_CM` in `wro_hw_config_v13.h`, reflash, repeat once.
 
-1. Пометить стартовую позицию колеса маркером
-2. Выполнить 3 прогона на 100 см
-3. Для каждого прогона записать delta `totalDistLeft` из Serial Monitor
-4. Вычислить среднее значение: `avg_delta = (run1 + run2 + run3) / 3`
-5. Вычислить: `TICKS_PER_CM = avg_delta / 100`
-6. Обновить `#define TICKS_PER_CM` в `src/esp32/wro_hw_config_v12.h` (для v12; в v11 — `legacy_eps323.cpp`), перепрошить, повторить контрольный прогон
+Pass: ≤ 2 cm error on a 100 cm run.
+Fail: >2 cm → repeat steps 2-6.
 
-Критерий PASS:
-- ошибка дистанции ≤ 2 см на 100 см
+### 15.4. First run — on the floor (NOT on the track)
 
-Критерий FAIL:
-- ошибка > 2 см → повторить шаги 2-6
+1. Smooth floor (not the track yet).
+2. KCD3 ON.
+3. LED slow blink → `RS_INIT` ✅
+4. Press E-Stop → fast blink → release → solid on = race ✅
+5. Press E-Stop → robot stops ✅
+6. Release → robot resumes ✅
 
-### 15.4. Первый запуск — на полу (без трека!)
+### 15.5. First lap — Open Challenge
 
-1. Поставить на **гладкий пол** (не на трек!) — безопаснее
-2. Включить тумблер KCD3
-3. LED мигает медленно = STATE_INIT ✅
-4. Нажать E-STOP → LED быстро мигает → отпустить → LED горит = гонка ✅
-5. Нажать E-STOP → робот остановился ✅
-6. Отпустить → робот продолжил ✅
+1. `OBSTACLE_MODE 0` → reflash.
+2. Place on track (no pillars).
+3. Run.
+4. Robot should complete **3 laps and stop**.
+5. If not, read Serial telemetry to debug.
 
-### 15.5. Первый заезд — Open Challenge
+### 15.6. Lap — Obstacle Challenge
 
-1. Закомментировать `#define OBSTACLE_CHALLENGE_MODE` → перепрошить
-2. Поставить на трек (без столбов)
-3. Запустить
-4. Робот должен проехать **3 круга и остановиться**
-5. Если не проехал — анализировать Serial Monitor
+1. `OBSTACLE_MODE 1` → reflash.
+2. Place red and green pillars on the track.
+3. Run.
+4. Red → keep right; green → keep left.
+5. 3 laps → parking between magenta blocks.
 
-### 15.6. Заезд — Obstacle Challenge
+### 15.7. Live PID tuning
 
-1. Раскомментировать `#define OBSTACLE_CHALLENGE_MODE` → перепрошить
-2. Расставить красные и зелёные столбы на треке
-3. Запустить
-4. Красные — объезд **справа**, зелёные — **слева**
-5. 3 круга → парковка между малиновыми блоками
+During a run you can change PID gains over USB Serial in real time:
 
-### 15.7. Live-тюнинг PID
+| Command | Example | Effect |
+|:-------:|---------|--------|
+| `P0.65` | Kp = 0.65 | Sharper steering correction |
+| `D0.25` | Kd = 0.25 | More damping (less oscillation) |
+| `I0.003` | Ki = 0.003 | More integral (kills steady drift) |
+| `G1.50` | Gyro Kp = 1.50 | Stronger heading correction |
+| `S+` / `S-` | — | Bump max speed ±5 PWM |
+| `?` | — | Full state dump |
+| `!` | — | Software E-Stop |
 
-Во время заезда можно менять PID через Serial Monitor **в реальном времени**:
+Defaults from `wro_config_v13.h`: `PILLAR_KP=0.45`, `PILLAR_KI=0.001`, `PILLAR_KD=0.30`, `HEADING_KP=12.0`. Tune from there.
 
-| Команда | Пример | Что делает |
-|:-------:|--------|------------|
-| `P0.65` | Kp = 0.65 | Усилить коррекцию (резче руль) |
-| `D0.25` | Kd = 0.25 | Усилить демпфирование (меньше колебаний) |
-| `I0.003` | Ki = 0.003 | Усилить интеграл (убрать постоянный увод) |
-| `G1.50` | Gyro Kp = 1.50 | Усилить коррекцию курса по гироскопу |
-
-> Начните с `P0.55, D0.18, I0.002, G1.20` (значения по умолчанию) и подстраивайте.
-
-✅ **Финальный чеклист:**
-- [ ] Все 6 цветов откалиброваны в OpenMV
-- [ ] FOCAL_CONST записан: _____
-- [ ] TICKS_PER_CM записан: _____
-- [ ] E-STOP работает (остановка + продолжение)
-- [ ] Open Challenge: 3 круга + остановка ✅
-- [ ] Obstacle Challenge: объезд столбов + парковка ✅
-- [ ] LED показывает правильные состояния
-- [ ] 📸 Видео успешного заезда записано (для video/)
+✅ **Final checklist:**
+- [ ] All 6 colors calibrated in OpenMV
+- [ ] FOCAL_CONST recorded: ___
+- [ ] TICKS_PER_CM recorded: ___
+- [ ] E-Stop works (stop + resume)
+- [ ] Open Challenge: 3 laps + stop
+- [ ] Obstacle Challenge: pillars + parking
+- [ ] LED shows correct states
+- [ ] 📸 Successful-run video captured for `video/`
 
 ---
 
-## Типичные проблемы и решения
+## Common problems and fixes
 
-### 🔌 I2C проблемы
+### 🔌 I2C issues
 
-| Симптом | Причина | Решение |
-|---------|---------|---------|
-| Робот зависает через 5-10 сек | EMI мотора на I2C | Конденсаторы 0.1мкФ на моторе (3шт) |
-| Энкодеры «пропадают» | Длинные провода + 400 кГц | Укоротить провода или `Wire.setClock(100000)` |
-| TCA9548A не найден | Нет pull-up резисторов | Установить 4.7кОм на SDA + SCL |
-| IMU выдаёт bias > 0.1 | Вибрация при калибровке | Робот НЕПОДВИЖЕН 3 сек + виброизоляция |
-| Все датчики пропадают одновременно | GND не общий | Прозвонить все GND |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Robot freezes after 5-10 s | Motor EMI on I2C | 0.1 µF caps on motor (3 of them) |
+| Encoders drop out | Long wires + 400 kHz | Shorter wires, or `Wire.setClock(100000)` |
+| Scanner finds nothing | Missing pull-ups | Add 4.7 kΩ on SDA + SCL of each bus |
+| IMU bias > 0.1 | Vibration during calibration | Robot still + foam isolation |
+| All sensors disappear at once | No common GND | Verify 0 Ω between every GND |
 
-### 🎥 Камера не видит цвета
+### 🎥 Camera doesn't see colors
 
-| Симптом | Причина | Решение |
-|---------|---------|---------|
-| Все пороги не работают | Авто-экспозиция/баланс белого включены | Убедиться `auto_gain=False, auto_whitebal=False` |
-| Цвет «поплыл» при другом свете | Калибровка при другом освещении | Перекалибровать Threshold Editor на месте |
-| Путает красный и оранжевый | Пороги LAB перекрываются | Сузить диапазоны в Threshold Editor |
-| Камера не отвечает по UART | TX/RX не перекрёстно | Поменять RX↔TX |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| All thresholds fail | Auto exposure / white balance still on | `auto_gain=False, auto_whitebal=False` |
+| Color "moved" under different lighting | Calibrated under different lighting | Recalibrate on site with Threshold Editor |
+| Confuses red and orange | LAB ranges overlap | Tighten ranges in Threshold Editor |
+| No UART data | TX/RX not crossed | Swap RX↔TX |
 
-### 🏎️ Робот едет криво
+### 🏎️ Robot drives crooked
 
-| Симптом | Причина | Решение |
-|---------|---------|---------|
-| Тянет вправо/влево | SERVO_CENTER неточен | Подобрать 88-92 экспериментально |
-| Дёрганый руль | Шумная PID производная | Уменьшить `DERIVATIVE_ALPHA` (0.2-0.3) |
-| Не попадает в повороты | BLIND_TURN_ANGLE мал | Увеличить до 88-92° |
-| Проезжает стартовую линию | Cooldown слишком большой | Уменьшить `LINE_DETECT_COOLDOWN_MS` |
-| Колебания руля (осцилляция) | Kp слишком высокий | Снизить через `P0.40` в Serial |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Drifts left/right | SERVO_CENTER_US off | Re-run `sketches/servo_calibrate` |
+| Twitchy steering | Noisy PID derivative | Lower `PILLAR_DERIV_EMA_A` (0.2-0.3) |
+| Misses corners | `TURN_TARGET_DEG` too low | Raise to 88-92° |
+| Crosses start line late | Lap cooldown too long | Lower `LAP_COOLDOWN_MS` |
+| Steering oscillates | Kp too high | Drop with `P0.40` over Serial |
 
-### 🔋 Питание
+### 🔋 Power
 
-| Симптом | Причина | Решение |
-|---------|---------|---------|
-| ESP32 перезагружается при старте мотора | Просадка 5V | Конденсатор 470мкФ на 5V шину |
-| Серво дёргается | LM2596 не даёт 2A+ | Проверить LM2596 под нагрузкой |
-| Батарея «проседает» | Разряд ниже 6.4V | LiPo тестер с пищалкой |
-
----
-
-## 🏆 Рекомендации для соревнования
-
-1. **Распечатайте** этот документ и держите при себе на WRO
-2. **Возьмите запасные:** Dupont провода, ESP32, стяжки, скотч 3M, изоленту
-3. **Запишите** рабочие пороги цветов на бумагу (если IDE недоступна — восстановите быстро)
-4. **Заряжайте** LiPo до 8.4V перед каждым раундом
-5. **Прогрейте** робота одним тестовым кругом — гироскоп стабилизируется
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| ESP32-S3 reboots when motor starts | 5 V sag | 470 µF on the 5 V rail |
+| Servo jitters | LM2596 can't deliver 2 A+ | Verify LM2596 under load |
+| Battery sags | Below 6.4 V | LiPo tester with alarm |
 
 ---
 
-> *«Engineering is the closest thing to magic that exists in the world.»* 
-> 
-> **— Team Faith, удачи! 🏆**
+## 🏆 Competition tips
+
+1. **Print** this guide and bring it to WRO.
+2. **Spares:** Dupont jumpers, an extra ESP32-S3, zip ties, 3M tape, insulating tape.
+3. **Write down** working color thresholds on paper as a fallback.
+4. **Charge** the LiPo to 8.4 V before each round.
+5. **Warm up** the robot with one practice lap so the gyro stabilizes.
+
+---
+
+> *"Engineering is the closest thing to magic that exists in the world."*
+>
+> **— Team Faith**

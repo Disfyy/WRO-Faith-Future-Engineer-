@@ -1,50 +1,56 @@
-# WRO Preflight Log (v12)
+# WRO Preflight Log (v13)
 
 ## Session
 - Date:
 - Location:
-- Firmware: `wro_v12_main.cpp` (target 11)
+- Firmware: `wro_v13_main.cpp` (target 11)
 - `OBSTACLE_MODE`: 0 (Open) / 1 (Obstacle) — circle one
+- `HAS_SIDE_TOF`: 0 / 1 — circle one
 - Operator:
 
 ## Hardware Check
-- [ ] Battery voltage in range
+- [ ] Battery voltage in range (LiPo 7.0–8.4 V)
 - [ ] Connectors tight (motor power, servo, sensors)
 - [ ] No wire damage
-- [ ] Wheels / steering free movement
-- [ ] TFMini-S powered from 5 V (not 3.3 V)
+- [ ] Wheels / steering move freely
+- [ ] VL53L1X sensors powered from 5 V (VIN), not 3.3 V
 
-## I2C Scanner Check (`scan_i2c_v12.cpp`, target 2)
-- [ ] ICM-20948 IMU at `0x68`
-- [ ] **No other devices** on the bus (v12 has only the IMU on I2C)
+## I2C Scanner Check (`scan_i2c_v13.cpp`, target 2)
+Both buses scanned. Pre-VL53L1X-remap, expected addresses are:
+- [ ] **I2C0 (Wire)**: `0x68` (IMU) + `0x36` (AS5600 Left) + `0x29` (VL53L1X Front)
+- [ ] **I2C1 (Wire1)**: `0x36` (AS5600 Right) + `0x29` (VL53L1X Side)
+- [ ] **No `0x70`** (TCA9548A is gone in v13)
 
 ## Encoder Check (`test_encoders.cpp`, target 8)
-- [ ] AS5048A Left raw read 0–16383, ticks accumulate when wheel turns
-- [ ] AS5048A Right raw read 0–16383, ticks accumulate when wheel turns
-- [ ] No "-1" error returns from `as5048a_readAngle()`
+- [ ] AS5600 Left (I2C0) raw 0–4095, ticks accumulate when wheel turns
+- [ ] AS5600 Right (I2C1) raw 0–4095, ticks accumulate when wheel turns
+- [ ] No `-1` returns from `as5600_read()`
+- [ ] Magnet status reports `OK` for both encoders
 
-## TFMini-S Check (`test_tfmini.cpp`, target 9)
-- [ ] Front sensor reports distance in cm
-- [ ] Signal strength > 100 (else `dist=9999` is filtered)
-- [ ] Sensor mounted at 3–5 cm height, laser parallel to ground
+## VL53L1X Check (`test_vl53l1x.cpp`, target 9)
+- [ ] Front and side sensors come up at remapped addresses (0x30, 0x31)
+- [ ] Distances change smoothly when a hand is moved 10–100 cm in front
+- [ ] No `9999` saturation reads at normal distances
+- [ ] XSHUT pins driven HIGH after boot dance completes
 
-## Bench Test (`bench_test_v12.cpp`, target 10)
-- [ ] IMU yaw responds to chassis rotation
-- [ ] Servo sweeps left/center/right cleanly
-- [ ] Motor PWM ramps in commanded direction (wheels off ground)
-- [ ] Camera frames received (UART2)
-- [ ] E-Stop button reads correctly
+## Bench Test (`bench_test_v13.cpp`, target 10)
+- [ ] IMU yaw responds to chassis rotation by hand
+- [ ] Servo sweeps left/center/right cleanly via `sl`/`sc`/`sr`
+- [ ] Motor PWM ramps forward and reverse via `f`/`b` (wheels off the ground!)
+- [ ] Camera frames received over UART2 (live mode `e`)
+- [ ] E-Stop button reads correctly (status `s`)
 
 ## Safety Check (under target 11)
-- [ ] E-Stop press = immediate motor stop (<50 ms)
-- [ ] E-Stop release = controlled resume, PIDs reset
-- [ ] Camera timeout (Obstacle mode) → SAFE_STOP after 3 s
+- [ ] E-Stop press → immediate motor stop (<50 ms)
+- [ ] E-Stop release → controlled resume, PIDs reset
+- [ ] Camera timeout (Obstacle mode) → `SAFE_STOP` after `CAM_SILENT_STOP_MS` (3 s)
 - [ ] Software E-Stop (`!` over USB serial) works
+- [ ] Encoder fail-counter trips → `SAFE_STOP` (verify by yanking one I2C bus briefly)
 
-## Servo Calibration
-- [ ] Center, left, right µs measured on actual chassis (target 7 — needs v12 port)
-- [ ] `SERVO_CENTER_US` / `SERVO_LEFT_US` / `SERVO_RIGHT_US` updated in `wro_hw_config_v12.h`
-- [ ] 60 µs safety margin from each end-stop verified (`SERVO_LEFT_SAFE_US`, `SERVO_RIGHT_SAFE_US`)
+## Servo Calibration (`sketches/servo_calibrate/servo_calibrate.ino`)
+- [ ] Center, left, right µs measured on the actual chassis (using the calibration sketch)
+- [ ] `SERVO_CENTER_US` / `SERVO_LEFT_US` / `SERVO_RIGHT_US` updated in `wro_hw_config_v13.h`
+- [ ] 60 µs safety margin (`SERVO_MARGIN_US`) leaves the servo unstalled at the end-stops
 
 ## Final Decision
 - [ ] READY FOR TRACK

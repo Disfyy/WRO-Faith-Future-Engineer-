@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
 """
-HSP 94182 1/16 — параметрическая CAD-модель шасси
+HSP 94182 1/16 -- parametric CAD model of the chassis
 ====================================================
 
-Профессиональная B-Rep CAD-модель на CadQuery. Экспорт в:
-  • STEP   — универсальный CAD-формат (Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA)
-  • STL    — для 3D-печати
-  • 3MF    — для современных слайсеров (Bambu Studio, PrusaSlicer)
-  • GLTF   — для веба и 3D-просмотра
+Professional B-Rep CAD model built with CadQuery. Exports to:
+  - STEP   -- universal CAD format (Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA)
+  - STL    -- for 3D-printing
+  - 3MF    -- for modern slicers (Bambu Studio, PrusaSlicer)
+  - GLTF   -- web and 3D viewers
 
-Это НАСТОЯЩАЯ CAD-модель: проработанные грани, рёбра, скругления, фаски —
-не tessellated mesh. После импорта в Fusion/SolidWorks её можно редактировать,
-прокладывать сечения, делать чертежи и FEA-расчёты.
+This is a REAL CAD model with proper faces, edges, fillets, and chamfers --
+not a tessellated mesh. After STEP import it edits inside Fusion or SolidWorks
+as a true solid (sectioning, drawings, FEA, etc).
 
-Установка
----------
+Install
+-------
     pip install -r requirements.txt
-    # или напрямую:
+    # or directly:
     pip install cadquery
 
-Использование
--------------
-    python3 chassis_cad.py                        # → cad/HSP94182_assembly.step + .stl
-    python3 chassis_cad.py --format step,stl,3mf  # выбрать форматы
-    python3 chassis_cad.py --part chassis_plate   # одна деталь
-    python3 chassis_cad.py --list                 # список деталей
-    python3 chassis_cad.py --explode              # экспортировать с разнесением
+Usage
+-----
+    python3 chassis_cad.py                        # -> cad/HSP94182_assembly.step + .stl
+    python3 chassis_cad.py --format step,stl,3mf  # pick formats
+    python3 chassis_cad.py --part chassis_plate   # single part
+    python3 chassis_cad.py --list                 # list parts
+    python3 chassis_cad.py --explode              # export exploded
 
-Координатная система (стандарт авто-CAD):
-    +X  — вперёд (направление движения)
-    +Y  — влево
-    +Z  — вверх
+Coordinate frame (standard automotive CAD):
+    +X  -- forward (direction of travel)
+    +Y  -- left
+    +Z  -- up
 """
 
 from __future__ import annotations
@@ -44,29 +44,29 @@ try:
     import cadquery as cq
     from cadquery import exporters
 except ImportError:
-    print("ОШИБКА: CadQuery не установлен.", file=sys.stderr)
-    print("Установка: pip install cadquery", file=sys.stderr)
-    print("Документация: https://cadquery.readthedocs.io", file=sys.stderr)
+    print("ERROR: CadQuery is not installed.", file=sys.stderr)
+    print("Install: pip install cadquery", file=sys.stderr)
+    print("Docs: https://cadquery.readthedocs.io", file=sys.stderr)
     sys.exit(1)
 
 
 # ============================================================================
-#  ПАРАМЕТРЫ (мм) — изменяйте здесь, чтобы адаптировать модель
+#  PARAMETERS (mm) -- edit here to retarget the model
 # ============================================================================
-WHEELBASE       = 205.0   # колёсная база
-TRACK           = 130.0   # колея
-CHASSIS_L       = 250.0   # длина основной плиты
-CHASSIS_W       =  80.0   # ширина основной плиты
-CHASSIS_T       =   3.0   # толщина плиты
-GROUND_CL       =   8.0   # дорожный просвет
+WHEELBASE       = 205.0   # wheelbase
+TRACK           = 130.0   # track width
+CHASSIS_L       = 250.0   # main plate length
+CHASSIS_W       =  80.0   # main plate width
+CHASSIS_T       =   3.0   # main plate thickness
+GROUND_CL       =   8.0   # ground clearance
 
-# Колёса
+# Wheels
 WHEEL_D         =  54.0
 WHEEL_W         =  22.0
 RIM_D           =  36.0
-HUB_D           =   9.0   # диаметр hex-hub
+HUB_D           =   9.0   # hex-hub diameter
 
-# Амортизатор
+# Shock absorber
 SHOCK_L         =  38.0
 SHOCK_BODY_D    =   5.0
 SHOCK_CAP_D     =   7.2
@@ -75,21 +75,21 @@ SPRING_D        =   7.6
 SPRING_TURNS    =   9
 SPRING_WIRE_D   =   1.1
 
-# Аккумулятор Li-Po
+# Li-Po battery
 BAT_L           =  78.0
 BAT_W           =  36.0
 BAT_H           =  18.0
 
-# Бампер
+# Bumper
 BUMPER_W        = 150.0
 BUMPER_T        =  28.0
 BUMPER_H        =  12.0
 
-# Геометрия плиты — облегчающие треугольные вырезы
-TRI_HOLES = [(60, 0, 30, 90), (0, 0, 34, -90), (-60, 0, 30, 90)]  # (x, y, размер, угол°)
+# Plate geometry -- triangular weight-relief cutouts
+TRI_HOLES = [(60, 0, 30, 90), (0, 0, 34, -90), (-60, 0, 30, 90)]  # (x, y, size, angle deg)
 
 # ============================================================================
-#  ЦВЕТА (для STEP-сборки и glTF)
+#  COLORS (used in STEP assembly and glTF)
 # ============================================================================
 C_BLACK   = cq.Color(0.10, 0.10, 0.11)
 C_PLASTIC = cq.Color(0.13, 0.14, 0.15)
@@ -104,11 +104,11 @@ C_GOLD    = cq.Color(0.78, 0.60, 0.23)
 
 
 # ============================================================================
-#  ФУНКЦИИ ПОСТРОЕНИЯ ДЕТАЛЕЙ
+#  PART BUILDERS
 # ============================================================================
 
 def chassis_plate() -> cq.Workplane:
-    """Главная плита: 8-угольный контур, 3 треугольных облегчения, крепёжные отверстия."""
+    """Main plate: 8-sided outline, three triangular weight-relief cutouts, mount holes."""
     half_l = CHASSIS_L / 2
     half_w = CHASSIS_W / 2
     inset_x = 16.0
@@ -154,7 +154,7 @@ def chassis_plate() -> cq.Workplane:
 
 
 def upper_deck() -> cq.Workplane:
-    """Верхняя T-образная дека."""
+    """Upper T-shaped deck."""
     pts = [
         (-90, -10), (90, -10), (90, 10),
         (20, 10),  (20, 38), (-20, 38),
@@ -168,7 +168,7 @@ def upper_deck() -> cq.Workplane:
 
 
 def shock_tower() -> cq.Workplane:
-    """Шок-башня: вертикальная пластина (с крылышками встроены в одну форму)."""
+    """Shock tower: vertical plate (wings merged into a single form)."""
     return (
         cq.Workplane("YZ")
         .polyline([
@@ -181,7 +181,7 @@ def shock_tower() -> cq.Workplane:
 
 
 def shock_body() -> cq.Workplane:
-    """Чёрный корпус амортизатора (без пружины)."""
+    """Black shock body (no spring)."""
     return (
         cq.Workplane("XY")
         .circle(SHOCK_BODY_D / 2)
@@ -190,12 +190,12 @@ def shock_body() -> cq.Workplane:
 
 
 def shock_cap() -> cq.Workplane:
-    """Синий алюминиевый колпак амортизатора (без проушины — отдельной деталью)."""
+    """Blue aluminum shock cap (the eyelet is a separate part)."""
     return cq.Workplane("XY").circle(SHOCK_CAP_D / 2).extrude(SHOCK_CAP_H)
 
 
 def shock_eye() -> cq.Workplane:
-    """Проушина амортизатора (кольцо)."""
+    """Shock eyelet (ring)."""
     return (
         cq.Workplane("XY")
         .circle(2.6).circle(1.4)
@@ -204,12 +204,12 @@ def shock_eye() -> cq.Workplane:
 
 
 def shock_shaft() -> cq.Workplane:
-    """Стальной шток амортизатора."""
+    """Steel shock shaft."""
     return cq.Workplane("XY").circle(1.1).extrude(12, both=True)
 
 
 def shock_spring() -> cq.Workplane:
-    """Спиральная пружина — реальный helical sweep."""
+    """Coil spring -- a real helical sweep."""
     h = SPRING_L = SHOCK_L * 0.92
     r = SPRING_D / 2.0
 
@@ -220,19 +220,19 @@ def shock_spring() -> cq.Workplane:
     )
     helix_path = cq.Workplane(obj=helix_wire)
 
-    # Профиль — круглое сечение проволоки
+    # Profile -- circular wire cross-section
     profile = (
         cq.Workplane("YZ")
         .center(r, 0)
         .circle(SPRING_WIRE_D / 2)
     )
     spring = profile.sweep(helix_path, isFrenet=True)
-    # Сместить пружину так, чтобы центр совпадал с центром корпуса
+    # Center the spring on the shock body
     return spring.translate((0, 0, -h / 2))
 
 
 def tire_solid() -> cq.Workplane:
-    """Шина — кольцо."""
+    """Tire -- ring."""
     tire_outer_r = WHEEL_D / 2
     tire_inner_r = tire_outer_r - WHEEL_W * 0.55
     return (
@@ -244,17 +244,17 @@ def tire_solid() -> cq.Workplane:
 
 
 def rim_solid() -> cq.Workplane:
-    """Диск со спицами и центральной втулкой."""
+    """Rim with spokes and a center hub."""
     tire_inner_r = WHEEL_D / 2 - WHEEL_W * 0.55
     rim_outer_r = RIM_D / 2
-    # Внешняя цилиндрическая часть диска
+    # Outer cylindrical part of the rim
     rim = (
         cq.Workplane("XY")
         .circle(tire_inner_r + 0.2)
         .circle(rim_outer_r * 0.45)
         .extrude(WHEEL_W / 2 - 1.5, both=True)
     )
-    # Лицевая пластина со спицами — простое кольцо со множеством скруглений
+    # Front face plate with spokes -- a simple ring with many fillets
     face = (
         cq.Workplane("XY")
         .workplane(offset=WHEEL_W / 2 - 1.6)
@@ -267,7 +267,7 @@ def rim_solid() -> cq.Workplane:
 
 
 def wheel_hub() -> cq.Workplane:
-    """Hex-hub — синий шестигранник в центре колеса."""
+    """Hex hub -- blue hexagon at the wheel center."""
     return (
         cq.Workplane("XY")
         .polygon(6, HUB_D)
@@ -276,7 +276,7 @@ def wheel_hub() -> cq.Workplane:
 
 
 def lower_arm(side: int = 1) -> cq.Workplane:
-    """Нижний рычаг подвески."""
+    """Lower suspension arm."""
     length = TRACK / 2 - 10
     return (
         cq.Workplane("XY")
@@ -286,7 +286,7 @@ def lower_arm(side: int = 1) -> cq.Workplane:
 
 
 def upper_arm(side: int = 1) -> cq.Workplane:
-    """Верхний рычаг подвески (короче и тоньше)."""
+    """Upper suspension arm (shorter and thinner)."""
     length = TRACK / 2 - 22
     return (
         cq.Workplane("XY")
@@ -296,22 +296,22 @@ def upper_arm(side: int = 1) -> cq.Workplane:
 
 
 def steering_hub(side: int = 1) -> cq.Workplane:
-    """Поворотный кулак — основной блок (шкворень и шпиндель добавляются в сборке)."""
+    """Steering hub -- main block (kingpin and spindle added at assembly time)."""
     return cq.Workplane("XY").box(8, 10, 16, centered=True)
 
 
 def hub_post() -> cq.Workplane:
-    """Стальной шкворень кулака."""
+    """Steel kingpin."""
     return cq.Workplane("XY").circle(1.4).extrude(9, both=True)
 
 
 def hub_spindle() -> cq.Workplane:
-    """Hex-шпиндель к колесу."""
+    """Hex spindle to wheel."""
     return cq.Workplane("YZ").circle(2.8).extrude(6, both=True)
 
 
 def differential() -> cq.Workplane:
-    """Корпус дифференциала + 2 крышки + CV-валы."""
+    """Differential housing + 2 caps + CV shafts."""
     housing = (
         cq.Workplane("YZ")
         .circle(11)
@@ -337,7 +337,7 @@ def differential() -> cq.Workplane:
 
 
 def motor() -> cq.Workplane:
-    """Корпус электромотора: банка + торцевая крышка + пиньон."""
+    """Motor body: can + endbell + pinion."""
     can = cq.Workplane("YZ").circle(13).extrude(15, both=True)
     endbell = (
         cq.Workplane("YZ").workplane(offset=-15)
@@ -351,7 +351,7 @@ def motor() -> cq.Workplane:
 
 
 def driveshaft() -> cq.Workplane:
-    """Карданный вал между диффами."""
+    """Cardan shaft between differentials."""
     return (
         cq.Workplane("YZ")
         .circle(1.6)
@@ -360,12 +360,12 @@ def driveshaft() -> cq.Workplane:
 
 
 def battery_pack() -> cq.Workplane:
-    """Li-Po аккумулятор."""
+    """Li-Po battery."""
     return cq.Workplane("XY").box(BAT_L, BAT_W, BAT_H, centered=True)
 
 
 def battery_label() -> cq.Workplane:
-    """Наклейка на батарее."""
+    """Battery sticker."""
     return (
         cq.Workplane("XY").workplane(offset=BAT_H / 2)
         .rect(BAT_L * 0.85, BAT_W * 0.55)
@@ -397,9 +397,9 @@ def servo_horn() -> cq.Workplane:
 
 def foam_bumper() -> cq.Workplane:
     """
-    Пенопластовый бампер — дугообразная пластина.
-    Делаем из эллиптической трубы: cut(внешний - внутренний эллипс) и обрезаем нижнюю
-    половину box-вычитанием.
+    Foam bumper -- arc plate.
+    Built from an elliptical tube: cut(outer - inner ellipse), then trim the
+    lower half with a box subtraction.
     """
     outer_a = BUMPER_W / 2
     outer_b = BUMPER_T * 0.7
@@ -417,7 +417,7 @@ def foam_bumper() -> cq.Workplane:
         .extrude(BUMPER_H + 2)
     )
     foam = outer_solid.cut(inner_solid)
-    # Обрезаем верхнюю (для переднего бампера) половину — оставляем только нижнюю дугу
+    # Trim the upper half (for the front bumper) -- keep only the lower arc
     cutter = (
         cq.Workplane("XY").workplane(offset=-1)
         .center(0, outer_b)
@@ -429,7 +429,7 @@ def foam_bumper() -> cq.Workplane:
 
 
 def bumper_holder() -> cq.Workplane:
-    """Пластиковый держатель бампера."""
+    """Plastic bumper holder."""
     return (
         cq.Workplane("XY")
         .center(0, -BUMPER_T * 0.4)
@@ -440,13 +440,13 @@ def bumper_holder() -> cq.Workplane:
 
 
 def body_post(h: float = 56) -> cq.Workplane:
-    """Кузовная стойка с R-клипсой."""
+    """Body post with R-clip."""
     shaft = cq.Workplane("XY").circle(1.8).extrude(h)
     return shaft
 
 
 def antenna_mount() -> cq.Workplane:
-    """Крепление антенны: основание + трубка (в одном теле)."""
+    """Antenna mount: base + tube (single solid)."""
     return (
         cq.Workplane("XY")
         .box(8, 8, 4, centered=True)
@@ -456,7 +456,7 @@ def antenna_mount() -> cq.Workplane:
 
 
 def steering_rod() -> cq.Workplane:
-    """Рулевая тяга — стальной стержень."""
+    """Tie rod -- steel bar."""
     return (
         cq.Workplane("YZ")
         .circle(0.9)
@@ -465,16 +465,16 @@ def steering_rod() -> cq.Workplane:
 
 
 def steering_ball() -> cq.Workplane:
-    """Шарик-шаровая опора рулевой тяги (две шт. в сборке)."""
+    """Ball joint for the tie rod (two of them in the assembly)."""
     return cq.Workplane("XY").sphere(2.4)
 
 
 # ============================================================================
-#  СБОРКА
+#  ASSEMBLY
 # ============================================================================
 
 def make_wheel_assembly() -> cq.Assembly:
-    """Колесо как подсборка: шина + диск + hex-hub разными цветами."""
+    """Wheel as a sub-assembly: tire + rim + hex hub with distinct colors."""
     asm = cq.Assembly(name="wheel")
     asm.add(tire_solid(),  name="tire", color=C_TIRE)
     asm.add(rim_solid(),   name="rim",  color=C_RIM)
@@ -483,7 +483,7 @@ def make_wheel_assembly() -> cq.Assembly:
 
 
 def make_shock_assembly() -> cq.Assembly:
-    """Амортизатор как подсборка (корпус + 2 колпака + 2 проушины + шток + пружина)."""
+    """Shock as a sub-assembly (body + 2 caps + 2 eyelets + shaft + spring)."""
     asm = cq.Assembly(name="shock")
     asm.add(shock_body(),  name="body",      color=C_DARKAL)
     asm.add(shock_spring(),name="spring",    color=C_STEEL)
@@ -499,7 +499,7 @@ def make_shock_assembly() -> cq.Assembly:
 
 
 def make_diff_assembly() -> cq.Assembly:
-    """Дифференциал как подсборка."""
+    """Differential as a sub-assembly."""
     housing, cap_l, cap_r, cv_l, cv_r = differential()
     asm = cq.Assembly(name="diff")
     asm.add(housing, name="housing", color=C_DARKAL)
@@ -511,7 +511,7 @@ def make_diff_assembly() -> cq.Assembly:
 
 
 def make_motor_assembly() -> cq.Assembly:
-    """Мотор как подсборка."""
+    """Motor as a sub-assembly."""
     can, endbell, pinion = motor()
     asm = cq.Assembly(name="motor")
     asm.add(can,     name="can",     color=C_STEEL)
@@ -559,7 +559,7 @@ def make_steering_assembly() -> cq.Assembly:
 
 
 def make_hub_assembly(side: int = 1) -> cq.Assembly:
-    """Поворотный кулак как подсборка (блок + шкворень + шпиндель)."""
+    """Steering hub as a sub-assembly (block + kingpin + spindle)."""
     asm = cq.Assembly(name="hub")
     asm.add(steering_hub(side), name="block",   color=C_BLUE)
     asm.add(hub_post(),         name="post",    color=C_STEEL,
@@ -571,12 +571,12 @@ def make_hub_assembly(side: int = 1) -> cq.Assembly:
 
 def build_assembly() -> cq.Assembly:
     """
-    Полная сборка шасси HSP 94182.
-    Все детали позиционируются с учётом дорожного просвета.
+    Full HSP 94182 chassis assembly.
+    Every part is positioned relative to the ground-clearance reference.
     """
     a = cq.Assembly(name="HSP94182_chassis")
 
-    # ---- Шасси ----
+    # ---- Chassis ----
     a.add(chassis_plate(),        name="chassis_plate",
           loc=cq.Location((0, 0, GROUND_CL)),         color=C_BLACK)
     a.add(upper_deck(),           name="upper_deck",
@@ -588,29 +588,29 @@ def build_assembly() -> cq.Assembly:
           loc=cq.Location((-WHEELBASE / 2 + 8, 0, GROUND_CL + 16)),
           color=C_BLACK)
 
-    # ---- Подвеска и амортизаторы ----
+    # ---- Suspension and shocks ----
     for x, label_x in [(WHEELBASE / 2, "f"), (-WHEELBASE / 2, "r")]:
         for side, label_y in [(1, "l"), (-1, "r")]:
             tag = f"{label_x}{label_y}"
-            # нижний рычаг
+            # lower arm
             a.add(lower_arm(side), name=f"lower_arm_{tag}",
                   loc=cq.Location((x, 0, GROUND_CL + 6)), color=C_BLACK)
-            # верхний рычаг
+            # upper arm
             a.add(upper_arm(side), name=f"upper_arm_{tag}",
                   loc=cq.Location((x, 0, GROUND_CL + 25)), color=C_BLACK)
             a.add(make_hub_assembly(side), name=f"hub_{tag}",
                   loc=cq.Location((x, side * (TRACK / 2 - 6), GROUND_CL + 14)))
-            # амортизатор
+            # shock
             a.add(make_shock_assembly(), name=f"shock_{tag}",
                   loc=cq.Location((x, side * (TRACK / 2 - 26), GROUND_CL + 24),
                                   (0, 1, 0), side * 10))
 
-    # ---- Рулевая тяга (только спереди) ----
+    # ---- Tie rod (front only) ----
     a.add(make_steering_assembly(), name="steering_link",
           loc=cq.Location((WHEELBASE / 2 + 6, 0, GROUND_CL + 14)))
 
-    # ---- Колёса ----
-    # Колёса строятся с осью Z, поворачиваем на 90° вокруг X → ось Y
+    # ---- Wheels ----
+    # Wheels are built around the Z axis; rotate 90 deg about X so they end up around Y
     for x, label_x in [(WHEELBASE / 2, "f"), (-WHEELBASE / 2, "r")]:
         for side, label_y in [(1, "l"), (-1, "r")]:
             tag = f"{label_x}{label_y}"
@@ -618,7 +618,7 @@ def build_assembly() -> cq.Assembly:
                   loc=cq.Location((x, side * TRACK / 2, WHEEL_D / 2),
                                   (1, 0, 0), 90))
 
-    # ---- Трансмиссия ----
+    # ---- Drivetrain ----
     a.add(make_diff_assembly(), name="diff_front",
           loc=cq.Location((WHEELBASE / 2, 0, GROUND_CL + 7)))
     a.add(make_diff_assembly(), name="diff_rear",
@@ -629,7 +629,7 @@ def build_assembly() -> cq.Assembly:
     a.add(make_motor_assembly(), name="motor",
           loc=cq.Location((-38, -18, GROUND_CL + 18)))
 
-    # ---- Электрика ----
+    # ---- Electronics ----
     a.add(make_battery_assembly(), name="battery",
           loc=cq.Location((0, 8, GROUND_CL + BAT_H / 2 + 3)))
     a.add(make_esc_assembly(),     name="esc",
@@ -637,21 +637,21 @@ def build_assembly() -> cq.Assembly:
     a.add(make_servo_assembly(),   name="servo",
           loc=cq.Location((60, -12, GROUND_CL + 11)))
 
-    # ---- Бамперы ----
+    # ---- Bumpers ----
     a.add(make_bumper_assembly(), name="bumper_front",
           loc=cq.Location((CHASSIS_L / 2 + 6, 0, GROUND_CL + 8)))
     a.add(make_bumper_assembly(), name="bumper_rear",
           loc=cq.Location((-CHASSIS_L / 2 - 6, 0, GROUND_CL + 8),
                           (0, 0, 1), 180))
 
-    # ---- Кузовные стойки ----
+    # ---- Body posts ----
     for sx in (-1, 1):
         for sy in (-1, 1):
             a.add(body_post(56), name=f"post_{'f' if sx > 0 else 'r'}{'l' if sy > 0 else 'r'}",
                   loc=cq.Location((sx * (WHEELBASE / 2 - 12), sy * 38, GROUND_CL + 10)),
                   color=C_BLACK)
 
-    # ---- Антенна ----
+    # ---- Antenna ----
     a.add(antenna_mount(), name="antenna",
           loc=cq.Location((-22, 34, GROUND_CL + 18)),
           color=C_BLACK)
@@ -660,7 +660,7 @@ def build_assembly() -> cq.Assembly:
 
 
 # ============================================================================
-#  ОДИНОЧНЫЕ ДЕТАЛИ — для экспорта по отдельности
+#  INDIVIDUAL PARTS -- for separate export
 # ============================================================================
 INDIVIDUAL_PARTS = {
     "chassis_plate":  lambda: chassis_plate(),
@@ -678,7 +678,7 @@ INDIVIDUAL_PARTS = {
 
 
 # ============================================================================
-#  ЭКСПОРТ
+#  EXPORT
 # ============================================================================
 def export_assembly(a: cq.Assembly, outdir: Path, formats: list[str]) -> None:
     base = outdir / "HSP94182_assembly"
@@ -701,7 +701,7 @@ def export_assembly(a: cq.Assembly, outdir: Path, formats: list[str]) -> None:
             a.save(path, "3MF")
             print(f"  ✓ {path}")
         except Exception as e:
-            print(f"  ⚠ 3MF не поддерживается этой версией CadQuery: {e}")
+            print(f"  WARN: 3MF not supported by this CadQuery version: {e}")
 
 
 def export_part(name: str, part: cq.Workplane, outdir: Path, formats: list[str]) -> None:
@@ -721,54 +721,54 @@ def export_part(name: str, part: cq.Workplane, outdir: Path, formats: list[str])
 # ============================================================================
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Генерация CAD-модели HSP 94182 (CadQuery → STEP/STL/3MF/GLTF)",
+        description="Generate the HSP 94182 CAD model (CadQuery -> STEP/STL/3MF/GLTF)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument("--list", action="store_true",
-                        help="Показать список одиночных деталей")
+                        help="List individual parts available for export")
     parser.add_argument("--part", action="append", default=None,
-                        help="Имя одной детали (можно несколько раз). Без флага = вся сборка.")
+                        help="Single part name (repeatable). Omit to export the full assembly.")
     parser.add_argument("--format", default="step,stl",
-                        help="Форматы через запятую: step, stl, 3mf, gltf (по умолчанию: step,stl)")
+                        help="Comma-separated formats: step, stl, 3mf, gltf (default: step,stl)")
     parser.add_argument("--outdir", default="cad",
-                        help="Папка для экспорта (по умолчанию: cad/)")
+                        help="Output directory (default: cad/)")
     args = parser.parse_args()
 
     if args.list:
-        print("\nДоступные одиночные детали:\n" + "-" * 50)
+        print("\nAvailable individual parts:\n" + "-" * 50)
         for name in INDIVIDUAL_PARTS:
             print(f"  {name}")
-        print("\nБез флага --part экспортируется ПОЛНАЯ сборка.\n")
+        print("\nWithout --part the FULL assembly is exported.\n")
         return 0
 
     formats = [f.strip().lower() for f in args.format.split(",") if f.strip()]
     valid = {"step", "stl", "3mf", "gltf"}
     bad = [f for f in formats if f not in valid]
     if bad:
-        print(f"ОШИБКА: неизвестные форматы {bad}. Доступно: {valid}", file=sys.stderr)
+        print(f"ERROR: unknown formats {bad}. Available: {valid}", file=sys.stderr)
         return 2
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    print(f"Папка вывода: {outdir.resolve()}")
-    print(f"Форматы: {formats}\n")
+    print(f"Output dir: {outdir.resolve()}")
+    print(f"Formats: {formats}\n")
 
     if args.part:
         bad = [p for p in args.part if p not in INDIVIDUAL_PARTS]
         if bad:
-            print(f"ОШИБКА: неизвестные детали {bad}", file=sys.stderr)
-            print("Запустите --list для списка.", file=sys.stderr)
+            print(f"ERROR: unknown parts {bad}", file=sys.stderr)
+            print("Run --list to see available parts.", file=sys.stderr)
             return 3
         for name in args.part:
-            print(f"→ {name}")
+            print(f"-> {name}")
             export_part(name, INDIVIDUAL_PARTS[name](), outdir, formats)
     else:
-        print("→ Полная сборка")
+        print("-> Full assembly")
         a = build_assembly()
         export_assembly(a, outdir, formats)
 
-    print("\nГотово.")
+    print("\nDone.")
     return 0
 
 

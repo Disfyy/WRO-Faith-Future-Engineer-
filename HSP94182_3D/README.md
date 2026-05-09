@@ -1,318 +1,316 @@
-# HSP 94182 — 3D-модель шасси (WRO Future Engineers)
+# HSP 94182 — 3D chassis model (WRO Future Engineers)
 
-Параметрическая 3D-модель шасси **HSP 94182** (1/16, электрический туринг) для документации команды **World Robot Olympiad — Future Engineers**.
+Parametric 3D model of the **HSP 94182** chassis (1/16 scale, on-road electric touring) for the **World Robot Olympiad — Future Engineers** team documentation.
 
-Пакет составлен так, чтобы **любая другая команда могла повторить модель** — на любой ОС, без платного ПО. Все исходники открыты, размеры параметрические.
+The package is structured so that **any other team can reproduce the model** on any OS, without paid software. All sources are open and parametric.
 
 ---
 
-## Структура папки
+## Folder layout
 
 ```
 HSP94182_3D/
-├── viewer.html         Интерактивный 3D-просмотрщик (открывается в любом браузере)
-├── chassis_cad.py      Настоящая CAD-модель на CadQuery → STEP / STL / 3MF
-├── chassis.scad        Параметрическая модель в OpenSCAD (альтернатива)
-├── generate_stl.py     Скрипт для пакетной генерации STL из OpenSCAD
-├── requirements.txt    Зависимости Python (для chassis_cad.py)
-├── README.md           Этот файл — документация
-├── cad/                (создаётся chassis_cad.py) готовые .STEP и .STL
-└── stl/                (создаётся generate_stl.py) STL из OpenSCAD-модели
+├── viewer.html         Interactive 3D viewer (opens in any browser)
+├── chassis_cad.py      True CAD model in CadQuery -> STEP / STL / 3MF
+├── chassis.scad        Parametric model in OpenSCAD (alternative)
+├── generate_stl.py     Batch STL exporter from the OpenSCAD model
+├── requirements.txt    Python deps (for chassis_cad.py)
+├── README.md           This file
+├── cad/                (created by chassis_cad.py) generated .STEP / .STL
+└── stl/                (created by generate_stl.py) STL from the OpenSCAD model
 ```
 
-### В чём разница между файлами модели
+### Which model file should you use
 
-| Файл              | Тип               | Когда использовать                                    |
-|-------------------|-------------------|-------------------------------------------------------|
-| `chassis_cad.py`  | **Настоящий CAD** | Инженерная документация, импорт в Fusion 360 / SolidWorks / OnShape, FEA-расчёты, чертежи |
-| `chassis.scad`    | Параметрический скрипт | Быстрое прототипирование, простое редактирование размеров |
-| `viewer.html`     | Web-визуализация  | Презентация, демо, экспорт в GLB для AR/VR             |
+| File              | Type              | When to use                                                          |
+|-------------------|-------------------|----------------------------------------------------------------------|
+| `chassis_cad.py`  | **True CAD**      | Engineering documentation; import into Fusion 360 / SolidWorks / OnShape; FEA; drawings |
+| `chassis.scad`    | Parametric script | Quick prototyping, easy dimension tweaks                              |
+| `viewer.html`     | Web viewer        | Presentations, demos, GLB export for AR/VR                            |
 
 ---
 
-## Быстрый старт — 4 способа
+## Quick start — 4 ways
 
-### 1. Получить настоящий CAD-файл (.STEP) — рекомендуется для WRO
+### 1. Generate a real CAD file (.STEP) — recommended for WRO
 
-**STEP** — это универсальный CAD-формат, открывается в **Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA, Inventor, Solid Edge, KOMPAS-3D** и любом другом CAD. В STEP-файле сохраняется параметрическая B-Rep геометрия (грани, рёбра, вершины), а не tessellated mesh — это значит модель можно редактировать в CAD-программе как обычный твердотельный проект.
+**STEP** is the universal CAD interchange format and opens in **Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA, Inventor, Solid Edge, KOMPAS-3D**, and any other CAD package. STEP carries the parametric B-Rep geometry (faces, edges, vertices), not a tessellated mesh — so the model can be edited in your CAD tool as a real solid.
 
 ```bash
-# 1. Установить CadQuery (один раз)
+# 1. Install CadQuery (one time)
 pip install -r requirements.txt
 
-# 2. Сгенерировать всю сборку → cad/HSP94182_assembly.step
+# 2. Generate the full assembly -> cad/HSP94182_assembly.step
 python3 chassis_cad.py
 
-# 3. Или одну деталь
+# 3. Or a single part
 python3 chassis_cad.py --part chassis_plate --format step
 
-# 4. Список доступных деталей
+# 4. List all available parts
 python3 chassis_cad.py --list
 ```
 
-**Импорт STEP в популярные CAD:**
+**Importing STEP into popular CAD tools:**
 
-| Программа       | Как импортировать                                          |
-|-----------------|-----------------------------------------------------------|
-| **Fusion 360**  | File → Insert → Insert Derive / Upload                     |
-| **SolidWorks**  | File → Open → выбрать .step                                |
-| **OnShape**     | + → Import → загрузить .step                               |
-| **FreeCAD**     | File → Open → .step (бесплатно, кроссплатформенно)         |
-| **KOMPAS-3D**   | Файл → Открыть → STEP-файл (поддержка ASCII / Binary)      |
-| **Blender**     | Plugin "STEPper" или конвертация .step → .obj через FreeCAD|
+| Program          | How to import                                              |
+|------------------|------------------------------------------------------------|
+| **Fusion 360**   | File -> Insert -> Insert Derive / Upload                    |
+| **SolidWorks**   | File -> Open -> select .step                                |
+| **OnShape**      | + -> Import -> upload .step                                 |
+| **FreeCAD**      | File -> Open -> .step (free, cross-platform)                |
+| **KOMPAS-3D**    | File -> Open -> STEP (ASCII / binary supported)             |
+| **Blender**      | Plugin "STEPper", or convert .step -> .obj via FreeCAD      |
 
-### 2. Просто посмотреть модель (без установки)
+### 2. Just look at the model (no install)
 
-Откройте файл **`viewer.html`** двойным кликом — он запустится в браузере (Chrome / Safari / Firefox / Edge). Доступно:
+Double-click **`viewer.html`** — it runs in any modern browser (Chrome / Safari / Firefox / Edge). Features:
 
-- вращение (ЛКМ), перемещение (ПКМ), зум (колесо)
-- переключение слоёв: шасси, подвеска, колёса, трансмиссия, электрика, кузов
-- предустановленные виды: изометрия / сверху / сбоку / спереди
-- экспорт модели в форматы:
-  - **`.GLB`** — для Blender, Unity, Unreal, AR/VR
-  - **`.STL`** — для 3D-печати
-  - **`.PNG`** — снимок для презентации / отчёта
+- rotate (LMB), pan (RMB), zoom (wheel)
+- toggle layers: chassis, suspension, wheels, drivetrain, electronics, body
+- preset views: isometric / top / side / front
+- export to:
+  - **`.GLB`** — Blender, Unity, Unreal, AR/VR
+  - **`.STL`** — 3D-printing
+  - **`.PNG`** — snapshot for the engineering journal
 
-> ⚠️ Для работы экспорта нужен **онлайн-доступ** при первом запуске (подгружается Three.js с CDN). После этого можно работать оффлайн в той же вкладке.
+> ⚠️ The first run needs internet access (Three.js loads from a CDN). After that, the same tab works offline.
 
-### 3. Редактировать параметры в OpenSCAD
+### 3. Edit parameters in OpenSCAD
 
-[OpenSCAD](https://openscad.org/downloads.html) — бесплатный кросс-платформенный редактор. Откройте **`chassis.scad`**, поменяйте параметры в начале файла:
+[OpenSCAD](https://openscad.org/downloads.html) is a free cross-platform script-based CAD. Open **`chassis.scad`** and edit the parameters at the top:
 
 ```scad
-WHEELBASE   = 205;   // расстояние между осями
-TRACK       = 130;   // колея
-WHEEL_D     = 54;    // диаметр колеса
-BAT_L       = 78;    // длина аккумулятора
+WHEELBASE   = 205;   // distance between axles
+TRACK       = 130;   // track width
+WHEEL_D     = 54;    // wheel diameter
+BAT_L       = 78;    // battery length
 ...
 ```
 
-Нажмите **F5** (предпросмотр) или **F6** (рендер). Меню `File → Export → STL` сохранит модель.
+Press **F5** (preview) or **F6** (full render). `File -> Export -> STL` saves the mesh.
 
-### 4. Сгенерировать STL пакетно
+### 4. Batch-generate STL
 
 ```bash
-# В терминале, в папке HSP94182_3D:
-python3 generate_stl.py            # сгенерировать ВСЕ детали
-python3 generate_stl.py --list     # увидеть список доступных деталей
+# In a terminal, inside HSP94182_3D/:
+python3 generate_stl.py            # generate ALL parts
+python3 generate_stl.py --list     # list available parts
 python3 generate_stl.py --part 01_chassis_plate --quality high
 ```
 
-Результат — папка `stl/` с готовыми файлами для импорта в любой слайсер (**Cura, PrusaSlicer, Bambu Studio**).
+The result lands in `stl/`, ready for any slicer (**Cura, PrusaSlicer, Bambu Studio**).
 
-> Скрипту требуется установленный OpenSCAD. Скрипт сам найдёт его на macOS / Linux / Windows.
+> The script needs OpenSCAD installed. It auto-locates the binary on macOS / Linux / Windows.
 
 ---
 
-## CAD-модель (`chassis_cad.py`) — детально
+## CAD model (`chassis_cad.py`) — details
 
-**CadQuery** ([cadquery.readthedocs.io](https://cadquery.readthedocs.io)) — это профессиональная Python-библиотека для параметрического CAD на базе **OpenCascade** (тот же движок, что в FreeCAD). Она генерирует **B-Rep** твердотельные модели, которые после экспорта в STEP открываются в любой современной CAD-системе как полноценные редактируемые тела.
+**CadQuery** ([cadquery.readthedocs.io](https://cadquery.readthedocs.io)) is a professional Python library for parametric CAD on top of **OpenCascade** (the same kernel FreeCAD uses). It outputs **B-Rep** solid models that, after STEP export, open in any modern CAD system as fully editable solids.
 
-### Доступные форматы экспорта
+### Available export formats
 
-| Формат | Расширение | Назначение |
-|--------|-----------|------------|
-| **STEP** | `.step` / `.stp` | Универсальный CAD — Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA |
-| **STL**  | `.stl` | 3D-печать (mesh), импорт в слайсеры |
-| **3MF**  | `.3mf` | Современный формат Bambu Studio / PrusaSlicer (с цветами) |
-| **GLTF** | `.glb` | AR/VR, веб-просмотр, Blender |
+| Format | Extension     | Use case |
+|--------|---------------|----------|
+| **STEP** | `.step` / `.stp` | Universal CAD — Fusion 360, SolidWorks, OnShape, FreeCAD, CATIA |
+| **STL**  | `.stl`           | 3D-printing (mesh), slicer import |
+| **3MF**  | `.3mf`           | Modern format for Bambu Studio / PrusaSlicer (with colors) |
+| **GLTF** | `.glb`           | AR/VR, web viewing, Blender |
 
 ```bash
-# Все 4 формата сразу
+# All four formats at once
 python3 chassis_cad.py --format step,stl,3mf,gltf
 
-# Только STEP в кастомную папку
+# STEP only, into a custom directory
 python3 chassis_cad.py --format step --outdir ~/Documents/WRO_CAD/
 ```
 
-### Список деталей в CAD-модели
+### Parts in the CAD model
 
-Можно экспортировать как полную сборку, так и отдельные детали:
+You can export the full assembly or any single part:
 
-| Имя             | Описание                                          |
-|-----------------|---------------------------------------------------|
-| `chassis_plate` | Главная плита с 3 треугольными вырезами облегчения|
-| `upper_deck`    | Верхняя T-образная дека                           |
-| `shock_tower`   | Шок-башня (передняя/задняя одинаковые)            |
-| `lower_arm`     | Нижний рычаг подвески                             |
-| `upper_arm`     | Верхний рычаг подвески                            |
-| `steering_hub`  | Поворотный кулак (блок без шкворня)               |
-| `body_post`     | Кузовная стойка                                   |
-| `antenna_mount` | Крепление антенны                                 |
-| `shock_body`    | Корпус амортизатора                               |
-| `shock_spring`  | Пружина амортизатора (helical sweep)              |
-| `driveshaft`    | Карданный вал                                     |
+| Name            | Description                                        |
+|-----------------|----------------------------------------------------|
+| `chassis_plate` | Main plate with three triangular weight-relief cutouts |
+| `upper_deck`    | T-shaped upper deck                                |
+| `shock_tower`   | Shock tower (front and rear share geometry)        |
+| `lower_arm`     | Lower suspension arm                               |
+| `upper_arm`     | Upper suspension arm                               |
+| `steering_hub`  | Steering knuckle (no kingpin)                      |
+| `body_post`     | Body mounting post                                 |
+| `antenna_mount` | Antenna mount                                      |
+| `shock_body`    | Shock absorber body                                |
+| `shock_spring`  | Shock spring (helical sweep)                       |
+| `driveshaft`    | Drive shaft / cardan                               |
 
-### Изменение параметров CAD-модели
+### Editing CAD parameters
 
-Все ключевые размеры в начале `chassis_cad.py`:
+All key dimensions live at the top of `chassis_cad.py`:
 
 ```python
-WHEELBASE       = 205.0   # колёсная база
-TRACK           = 130.0   # колея
-CHASSIS_L       = 250.0   # длина основной плиты
-CHASSIS_W       =  80.0   # ширина основной плиты
-WHEEL_D         =  54.0   # диаметр колеса
-SPRING_TURNS    =   9     # число витков пружины
-BAT_L           =  78.0   # длина аккумулятора
+WHEELBASE       = 205.0   # wheelbase (mm)
+TRACK           = 130.0   # track (mm)
+CHASSIS_L       = 250.0   # main plate length
+CHASSIS_W       =  80.0   # main plate width
+WHEEL_D         =  54.0   # wheel diameter
+SPRING_TURNS    =   9     # spring turns
+BAT_L           =  78.0   # battery length
 ...
 ```
 
-Поменяли значение → запустили скрипт → получили обновлённый STEP. Все детали пересчитываются автоматически.
+Change the value -> rerun the script -> get a fresh STEP. Every part recomputes automatically.
 
-### Координатная система (стандарт авто-CAD)
+### Coordinate frame (standard automotive CAD)
 
 ```
-   +Z (вверх)
+   +Z (up)
     │
-    │   +X (вперёд, по направлению движения)
-    │  ╱
-    │ ╱
-    └────── +Y (влево, если смотреть от водителя)
+    │   +X (forward, direction of travel)
+    │  /
+    │ /
+    └────── +Y (left, when sitting in the driver seat)
 ```
 
 ---
 
-## Спецификации шасси HSP 94182
+## HSP 94182 chassis specification
 
-| Параметр                   | Значение                       |
-|----------------------------|--------------------------------|
-| Масштаб                    | 1 : 16                         |
-| Тип                        | On-road touring (плоское шасси)|
-| Длина общая                | ≈ 273 мм                       |
-| Ширина                     | ≈ 155 мм                       |
-| Высота                     | ≈ 78 мм                        |
-| Колёсная база              | 205 мм                         |
-| Колея                      | 130 мм                         |
-| Дорожный просвет           | ≈ 8 мм                         |
-| Колёса                     | ⌀ 54 мм × 22 мм                |
-| Привод                     | 4WD (вал-кардан между диффами) |
-| Дифференциалов             | 2 (передний + задний)          |
-| Амортизаторов              | 4 (масляные, регулируемые)     |
-| Аккумулятор                | Li-Po 7.4 В, ≈ 78 × 36 × 18 мм |
-
----
-
-## Список деталей в модели
-
-| Группа         | Детали                                                                |
-|----------------|-----------------------------------------------------------------------|
-| **Шасси**      | главная плита, верхняя T-дека, боковые рейки, шок-башни (×2)          |
-| **Подвеска**   | нижние рычаги (×4), верхние рычаги (×4), поворотные кулаки (×4),      |
-|                | амортизаторы с пружинами (×4), рулевая тяга                           |
-| **Колёса**     | шины с протектором (×4), 10-спицевые диски (×4), hex-hub (×4)         |
-| **Трансмиссия**| дифференциалы (×2), вал-кардан, мотор с шестернёй пиньон              |
-| **Электрика**  | Li-Po аккумулятор, ESC (регулятор), сервопривод                       |
-| **Кузов**      | передний/задний бамперы, кузовные стойки (×4), антенный mount         |
+| Parameter             | Value                          |
+|-----------------------|--------------------------------|
+| Scale                 | 1 : 16                         |
+| Type                  | On-road touring (flat chassis) |
+| Overall length        | ≈ 273 mm                       |
+| Width                 | ≈ 155 mm                       |
+| Height                | ≈ 78 mm                        |
+| Wheelbase             | 205 mm                         |
+| Track                 | 130 mm                         |
+| Ground clearance      | ≈ 8 mm                         |
+| Wheels                | ⌀ 54 mm × 22 mm                |
+| Drive                 | 4WD (cardan between diffs)     |
+| Differentials         | 2 (front + rear)               |
+| Shock absorbers       | 4 (oil, adjustable)            |
+| Battery               | Li-Po 7.4 V, ≈ 78 × 36 × 18 mm |
 
 ---
 
-## Цвета и материалы (как на оригинале)
+## Parts list
 
-| Цвет в модели | Реальный материал | Где применяется |
-|---------------|-------------------|-----------------|
-| Чёрный матовый | ABS пластик       | Шасси, рычаги, бамперы, башни |
-| Синий глянцевый | Алюминий 6061-T6 анодированный | Кулаки, колпаки амортизаторов, hex-hub, крышки диффов |
-| Серебристый    | Сталь / нержавейка | Винты, штоки, валы, пружины, R-клипсы |
-| Белый          | Окрашенный пластик | Диски колёс |
-| Жёлтый         | Корпус Li-Po батареи | Аккумулятор |
+| Group         | Parts                                                                  |
+|---------------|------------------------------------------------------------------------|
+| **Chassis**   | main plate, upper T-deck, side rails, shock towers (×2)                |
+| **Suspension**| lower arms (×4), upper arms (×4), steering hubs (×4), shocks with springs (×4), tie rod |
+| **Wheels**    | tires with tread (×4), 10-spoke rims (×4), hex hubs (×4)               |
+| **Drivetrain**| differentials (×2), cardan shaft, motor with pinion gear               |
+| **Electronics**| Li-Po battery, ESC, steering servo                                    |
+| **Body**      | front/rear bumpers, body posts (×4), antenna mount                     |
 
 ---
 
-## Как изменить размеры под свой проект
+## Colors and materials (matching the original)
 
-В `chassis.scad` все ключевые параметры вынесены в начало файла. Например, чтобы поднять дорожный просвет:
+| Model color    | Real material                  | Where it's used |
+|----------------|--------------------------------|-----------------|
+| Matte black    | ABS plastic                    | Chassis, arms, bumpers, towers |
+| Glossy blue    | 6061-T6 anodized aluminum      | Hubs, shock caps, hex hubs, diff covers |
+| Silver         | Steel / stainless              | Screws, shafts, springs, R-clips |
+| White          | Painted plastic                | Wheel rims |
+| Yellow         | Li-Po battery shrink           | Battery |
+
+---
+
+## Resizing the model for your robot
+
+In `chassis.scad`, all key parameters live at the top of the file. For example, to lift the ground clearance:
 
 ```scad
-GROUND_CL = 12;   // было 8, увеличили на 4 мм
+GROUND_CL = 12;   // was 8, +4 mm
 ```
 
-Или поставить большие колёса:
+Or to fit larger wheels:
 
 ```scad
-WHEEL_D = 62;     // вместо 54
-WHEEL_W = 26;     // вместо 22
+WHEEL_D = 62;     // up from 54
+WHEEL_W = 26;     // up from 22
 ```
 
-После сохранения — **F5** в OpenSCAD пересчитает геометрию автоматически.
+Save -> press **F5** in OpenSCAD and the geometry rebuilds automatically.
 
 ---
 
-## 3D-печать: рекомендации
+## 3D-printing recommendations
 
-Эти настройки проверены для FDM-принтеров с соплом 0.4 мм:
+These settings have been validated on 0.4 mm-nozzle FDM printers:
 
-| Деталь            | Материал | Слой | Заполнение | Поддержки | Ориентация |
-|-------------------|----------|------|------------|-----------|------------|
-| `01_chassis_plate`| PETG/ABS | 0.20 | 50%        | нет       | плашмя     |
-| `02_upper_deck`   | PETG     | 0.20 | 40%        | нет       | плашмя     |
-| `03_shock_tower`  | PETG/PC  | 0.16 | 60%        | нет       | вертикально|
-| `04_lower_arm`    | PETG     | 0.16 | 80%        | нет       | плашмя     |
-| `05_upper_arm`    | PETG     | 0.16 | 80%        | нет       | плашмя     |
-| `06_steering_hub` | PETG/PC  | 0.12 | 100%       | нет       | вертикально|
-| `07_body_post`    | PETG     | 0.20 | 60%        | нет       | вертикально|
-| `08_foam_bumper`  | TPU 95A  | 0.20 | 30%        | нет       | плашмя     |
-| `09_antenna_mount`| PETG     | 0.20 | 50%        | нет       | плашмя     |
+| Part               | Material  | Layer | Infill | Supports | Orientation |
+|--------------------|-----------|-------|--------|----------|-------------|
+| `01_chassis_plate` | PETG/ABS  | 0.20  | 50%    | none     | flat        |
+| `02_upper_deck`    | PETG      | 0.20  | 40%    | none     | flat        |
+| `03_shock_tower`   | PETG/PC   | 0.16  | 60%    | none     | vertical    |
+| `04_lower_arm`     | PETG      | 0.16  | 80%    | none     | flat        |
+| `05_upper_arm`     | PETG      | 0.16  | 80%    | none     | flat        |
+| `06_steering_hub`  | PETG/PC   | 0.12  | 100%   | none     | vertical    |
+| `07_body_post`     | PETG      | 0.20  | 60%    | none     | vertical    |
+| `08_foam_bumper`   | TPU 95A   | 0.20  | 30%    | none     | flat        |
+| `09_antenna_mount` | PETG      | 0.20  | 50%    | none     | flat        |
 
-Для движущихся узлов (рычаги, кулаки) предпочтительнее **PC (поликарбонат)** или **PETG-CF** — они лучше держат удар.
-
----
-
-## Соответствие правилам WRO Future Engineers
-
-Этот пакет создан как **открытая инженерная документация**:
-
-- ✅ Все исходники в текстовом формате (`.scad`, `.html`, `.py`, `.md`) — можно открыть в любом редакторе
-- ✅ Не требует платного ПО — OpenSCAD, Python, любой браузер бесплатны
-- ✅ Параметрический — другие команды могут адаптировать под свои условия
-- ✅ Воспроизводим — одинаковый результат на macOS / Linux / Windows
-- ✅ Версионируется в Git — удобно прикладывать к engineering journal
+For moving parts (arms, hubs), prefer **PC (polycarbonate)** or **PETG-CF** — they survive impacts better.
 
 ---
 
-## Полезные команды
+## Compliance with WRO Future Engineers rules
+
+This package is intentionally built as **open engineering documentation**:
+
+- ✅ All sources are text (`.scad`, `.html`, `.py`, `.md`) — readable in any editor
+- ✅ No paid software — OpenSCAD, Python, any browser are free
+- ✅ Parametric — other teams can adapt to their constraints
+- ✅ Reproducible — identical output on macOS / Linux / Windows
+- ✅ Git-friendly — fits naturally into the engineering journal
+
+---
+
+## Useful commands
 
 ```bash
-# Открыть просмотрщик (macOS / Linux / Windows)
+# Open the viewer (macOS / Linux / Windows)
 open viewer.html       # macOS
 xdg-open viewer.html   # Linux
 start viewer.html      # Windows
 
-# === CAD-МОДЕЛЬ (рекомендуется для WRO) ===
-pip install -r requirements.txt    # один раз
-python3 chassis_cad.py             # → cad/HSP94182_assembly.step
-python3 chassis_cad.py --list      # список одиночных деталей
+# === CAD MODEL (recommended for WRO) ===
+pip install -r requirements.txt    # one time
+python3 chassis_cad.py             # -> cad/HSP94182_assembly.step
+python3 chassis_cad.py --list      # list of single parts
 python3 chassis_cad.py --part chassis_plate --format step,stl
 
-# === OpenSCAD-МОДЕЛЬ (альтернатива) ===
-python3 generate_stl.py                                  # все STL
+# === OPENSCAD MODEL (alternative) ===
+python3 generate_stl.py                                  # all STLs
 python3 generate_stl.py --part 01_chassis_plate --quality ultra
 python3 generate_stl.py --list
 ```
 
 ---
 
-## История версий
+## Version history
 
-| Версия | Дата       | Изменения                                                |
-|--------|------------|----------------------------------------------------------|
-| 1.0    | 2026-04-27 | Первая публикация: полная сборка, экспорт STL/GLB        |
-| 2.0    | 2026-04-27 | Добавлена настоящая CAD-модель (CadQuery → STEP)         |
-
----
-
-## Лицензия
-
-Файлы распространяются под лицензией **CC BY 4.0** — свободно использовать,
-изменять и публиковать с указанием источника. Идеально для документации WRO.
+| Version | Date       | Changes                                                       |
+|---------|------------|---------------------------------------------------------------|
+| 1.0     | 2026-04-27 | First publication: full assembly, STL/GLB export              |
+| 2.0     | 2026-04-27 | Added the real CAD model (CadQuery → STEP)                    |
 
 ---
 
-## Контакты команды
+## License
 
-> Заполните перед сдачей в engineering journal:
+Files are released under **CC BY 4.0** — free to use, modify, and publish with attribution. Suitable for WRO documentation.
 
-- Команда: ___________________________
-- Регион: ____________________________
-- Год: 2026
-- Категория: WRO Future Engineers
+---
+
+## Team contact
+
+> Fill in before submitting the engineering journal:
+
+- Team: ___________________________
+- Region: __________________________
+- Year: 2026
+- Category: WRO Future Engineers

@@ -1,15 +1,15 @@
 # WRO Future Engineers — Robot Master Checklist
 
-Date: 9 April 2026 (last full revision); partial v12 update May 2026.
+Date: 9 April 2026 (initial) | Updated to v13 hardware: 9 May 2026
 Team: ____________________
 Robot Version: ____________________
 Firmware Version: ____________________
 
-> **Note (May 2026):** The hardware list and procedure references in this checklist were written for v11. The Pre-Flight Procedure section has been updated for v12 in-line. Other sections (line numbers in `eps323.cpp` etc.) remain v11; treat them as historical until a full re-audit. For day-of-race use, prefer [`WRO_Quick_Race_Checklist.md`](WRO_Quick_Race_Checklist.md) and [`WRO_Preflight_Log.md`](WRO_Preflight_Log.md).
+> **v13 hardware (May 2026):** ESP32-S3 + 2× AS5600 (dual native I2C) + 2× VL53L1X (XSHUT addr-remap) + ICM-20948 IMU + OpenMV H7 Plus + BTS7960 + JX servo. **No TCA9548A multiplexer** (the original v11 mux burned out). The address conflicts are resolved by splitting the AS5600s across `Wire`/`Wire1` and remapping VL53L1X addresses at boot. For race day, also use [`WRO_Quick_Race_Checklist.md`](WRO_Quick_Race_Checklist.md) and [`WRO_Preflight_Log.md`](WRO_Preflight_Log.md).
 
 ---
 
-## 1) Purpose of this file
+## 1) Purpose
 Use this checklist before every test and race run to confirm the robot is safe, rule-compliant, and stable.
 
 ---
@@ -19,202 +19,206 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 - Official rules: `WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
 - Rule mapping: `docs/WRO_Rule_Compliance_Matrix.md`
 - Characteristics audit: `docs/WRO_Characteristics_Audit_2026-04-09.md`
-- Main build/operation guide: `docs/WRO_Robot_Assembly_and_Startup_Guide.md`
+- Main build / operation guide: `docs/WRO_Robot_Assembly_and_Startup_Guide.md`
 
 ---
 
-## 3) Hardware Required (Minimum)
+## 3) Hardware required (minimum)
 
-### Controller and logic (v12)
-- ESP32-S3-DevKitC-1 N8R8
-- ICM-20948 IMU (only I2C device — no mux)
-- AS5048A magnetic encoder × 2 (SPI HSPI, 14-bit)
-- TFMini-S front distance (UART1, 12 m range)
-- OpenMV H7 Plus (UART2, vision)
-- OpenMV H7 Plus camera (or configured equivalent)
+### Controller and logic (v13)
+- ESP32-S3-DevKitC-1 N8R8 (USB-C, native USB-OTG)
+- ICM-20948 IMU (on I2C0 with AS5600 Left + VL53L1X Front)
+- AS5600 magnetic encoder × 2 (one on each native I2C bus, fixed `0x36`)
+- VL53L1X distance sensor × 2 (one on each I2C bus, default `0x29` → remapped at boot)
+- OpenMV H7 Plus (UART2)
 
 ### Motion and power
 - BTS7960 motor driver
 - DC drive motor
 - Steering servo JX PDI-6221MG
-- Stable battery for motor + logic power strategy
-- Main power switch
-- Emergency stop button (physical, normally HIGH with pull-up in code)
+- LiPo 7.4 V + LM2596 step-down to 5 V (and optional 3.3 V)
+- One main power switch (KCD3)
+- E-Stop button (GPIO 21, INPUT_PULLUP, active LOW)
 
 ### Wiring and mechanics
-- Good quality wires + crimped connectors
-- Common GND between ESP32, driver, sensors, camera
-- Mounted sensors with vibration reduction
-- Proper servo horn alignment at center position
+- Quality wires, crimped connectors
+- Common GND between ESP32-S3, BTS7960, sensors, camera (star ground)
+- Sensors mounted with vibration reduction
+- Servo horn aligned at the mechanical center
 
 ---
 
-## 4) Required Wiring Map (must match firmware)
+## 4) Required wiring map (must match firmware)
 
-### ESP32 pins
-- I2C SDA: GPIO 21
-- I2C SCL: GPIO 22
-- Servo PWM: GPIO 18
-- BTS7960 R_EN: GPIO 19
-- BTS7960 L_EN: GPIO 23
-- BTS7960 R_PWM: GPIO 5
-- BTS7960 L_PWM: GPIO 14
-- Camera UART RX: GPIO 16
-- Camera UART TX: GPIO 17
-- E-Stop input: GPIO 32
-- Status LED: GPIO 2
+### ESP32-S3 pins (v13)
+- **I2C0 SDA:** GPIO 8
+- **I2C0 SCL:** GPIO 9
+- **I2C1 SDA:** GPIO 11
+- **I2C1 SCL:** GPIO 12
+- **VL53L1X Front XSHUT:** GPIO 15
+- **VL53L1X Side XSHUT:** GPIO 16
+- **VL53L1X Third XSHUT (reserved):** GPIO 47
+- **OpenMV camera RX:** GPIO 17
+- **OpenMV camera TX:** GPIO 18
+- **BTS7960 R_EN:** GPIO 38
+- **BTS7960 L_EN:** GPIO 39
+- **BTS7960 R_PWM:** GPIO 40 (LEDC Ch0 — forward)
+- **BTS7960 L_PWM:** GPIO 41 (LEDC Ch1 — reverse)
+- **Steering servo:** GPIO 42
+- **E-Stop:** GPIO 21
+- **Status LED:** GPIO 2
+- **Onboard RGB LED:** GPIO 48
 
-### TCA9548A channel mapping
-- Channel 0: ICM-20948 (expected 0x69)
-- Channel 1: AS5600 left (0x36)
-- Channel 2: AS5600 right (0x36)
-- Channel 3-7: empty (unless intentionally used)
+### I2C0 (Wire) device map
+- ICM-20948 IMU at `0x68` (AD0 → GND)
+- AS5600 Left at `0x36`
+- VL53L1X Front: `0x29` at boot → `0x30` after remap
 
-### Multiplexer base address
-- TCA9548A: 0x70 (A0/A1/A2 to GND)
+### I2C1 (Wire1) device map
+- AS5600 Right at `0x36`
+- VL53L1X Side: `0x29` at boot → `0x31` after remap
+
+> **No `0x70`** — the TCA9548A is gone in v13.
 
 ---
 
-## 5) Software/Library Requirements
+## 5) Software / library requirements
 
-### Arduino IDE / PlatformIO
-- ESP32 board package installed
-- Correct board profile selected
-- Serial monitor at 115200 baud
+### Arduino IDE
+- ESP32 board package (Espressif v3.x)
+- Board: **ESP32S3 Dev Module**
+- USB CDC On Boot: **Enabled**
+- Flash Size: **8MB**, PSRAM: **OPI PSRAM**
+- Serial Monitor at 115200 baud
 
 ### Libraries
 - Wire (built-in)
 - ESP32Servo
 - Adafruit ICM20948
 - Adafruit Unified Sensor
+- **VL53L1X by Pololu** (new in v13)
+- (AS5600 driver is inline in `as5600_dual_i2c.h` — no library install)
 
-### Code files (v12)
-- `scan_i2c_v12.cpp` (diagnostic scanner — target 2)
-- `wro_v12_main.cpp` (main race firmware — target 11)
-- `bench_test_v12.cpp` (full hardware bench — target 10)
-- `legacy_eps323.cpp` (v11 reference; not active)
+### Active code files (v13)
+- `wro_v13_main.cpp` (main race firmware — target 11)
+- `scan_i2c_v13.cpp` (dual-bus diagnostic scanner — target 2)
+- `test_encoders.cpp` (AS5600 dual-I2C test — target 8)
+- `test_vl53l1x.cpp` (VL53L1X with XSHUT remap — target 9)
+- `bench_test_v13.cpp` (full bench — target 10)
+- `legacy_eps323.cpp` and other `legacy_*.cpp` (v11 reference, not active)
 
 ### Key protocol file
-- WRO_OpenMV_UART_Protocol.md (v3.0 with 6 fields + CRC)
+- `WRO_OpenMV_UART_Protocol.md` (v3.0 — 6 fields + XOR checksum)
 
 ---
 
-## 6) Safety Requirements (non-negotiable)
+## 6) Safety requirements (non-negotiable)
 
 | Requirement | Acceptance criteria | If FAIL |
 |-------------|---------------------|---------|
-| E-Stop works in all states | Pressing E-Stop forces SAFE_STOP; motor output = 0; steering = center | Stop testing; fix GPIO32 wiring and debounce path |
-| Startup is safe | On boot, robot waits in init state with motor output = 0 | Block run; inspect startup state transitions |
-| Camera-loss fail-safe | Warning after camera timeout (500 ms) and full safe stop if offline > 3000 ms | Block run; inspect UART and camera power wiring |
-| Encoder-loss fail-safe | Persistent encoder loss triggers critical safe stop | Block run; inspect AS5600, magnets, CH1/CH2 routing |
-| Wheels-off-ground first | First verification is done on stand | Do not continue to floor tests |
+| E-Stop works in all states | Pressing E-Stop forces `RS_SAFE_STOP`; motor = 0; steering centered | Stop testing; fix GPIO 21 wiring and debounce path |
+| Startup is safe | On boot, robot stays in `RS_INIT`/`RS_WAIT_START` with motor = 0 | Block run; inspect startup transitions |
+| Camera-loss fail-safe | Warning after camera timeout (500 ms) and full SAFE_STOP if offline > 3000 ms | Block run; inspect UART2 + camera power |
+| Encoder-loss fail-safe | Persistent encoder loss (50 consecutive errors) → SAFE_STOP | Block run; inspect AS5600, magnets, I2C wiring |
+| Wheels-off-ground first | Initial verification on a stand | Do not move to floor tests |
 
 ---
 
-## 7) Pre-Flight Procedure (every run)
+## 7) Pre-flight procedure (every run)
 
 ### Step A — Visual and electrical
-- Check all connectors for looseness
-- Check no exposed short points
-- Verify battery voltage in safe range
-- Verify common GND continuity
+- Check connectors for looseness
+- No exposed shorts
+- Battery voltage in range (LiPo 7.0–8.4 V)
+- Common GND continuity (multimeter: 0 Ω between every GND)
 
-If FAIL:
-- Fix cable/connector issues immediately
-- Re-run Step A before proceeding
+If FAIL → fix immediately and rerun Step A.
 
-### Step B — Sensor bus check (v12)
-1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_SCAN_I2C` (target 2) and upload `scan_i2c_v12.cpp`.
+### Step B — Sensor bus check (v13)
+1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_SCAN_I2C` (target 2) → upload `scan_i2c_v13.cpp`.
 2. Confirm:
-   - **Only `0x68`** (ICM-20948 IMU) appears.
-   - No other addresses (no TCA9548A, no AS5600, no VL53L1X — those are v11).
-3. Run target 8 (`test_encoders.cpp`): both AS5048A SPI encoders read 0–16383, accumulate ticks.
-4. Run target 9 (`test_tfmini.cpp`): front TFMini-S returns sane distance with strength > 100.
-5. If mismatch appears, stop and check wiring against `docs/WRO_Wiring_Map_v12.md`.
+   - **I2C0:** `0x68` + `0x36` + `0x29`
+   - **I2C1:** `0x36` + `0x29`
+   - **No `0x70`** — that would mean a TCA9548A is still on the bus (it shouldn't be in v13).
+3. Run target 8 (`test_encoders.cpp`): both AS5600s sweep 0–4095, ticks accumulate.
+4. Run target 9 (`test_vl53l1x.cpp`): both VL53L1X come up at remapped addresses (`0x30`, `0x31`) and report distances.
+5. If anything mismatches, stop and verify wiring against [`docs/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md).
 
-Expected map (v12):
-- I2C bus: only `0x68` (ICM-20948 IMU)
-- SPI HSPI: AS5048A Left (CS=GPIO 10), AS5048A Right (CS=GPIO 14)
-- UART1: TFMini-S front (GPIO 15/16, 5 V power)
-- UART2: OpenMV camera (GPIO 17/18)
-
-### Step C — Main firmware check (v12)
-1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_V12_MAIN` (target 11) and upload `wro_v12_main.cpp`.
-2. Open serial monitor at 115200 baud.
+### Step C — Main firmware check (v13)
+1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_V13_MAIN` (target 11) → upload `wro_v13_main.cpp`.
+2. Open Serial Monitor at 115200.
 3. Confirm boot sequence:
-   - Banner: `WRO FE 2026 — Team Faith — v12.0 main firmware`
-   - `Mode: OPEN` or `OBSTACLE` (matches `OBSTACLE_MODE` in `wro_config_v12.h`)
-   - `WiFi: OFF, BT: OFF` (Rule 11.10 compliance)
-   - `AS5048A SPI: OK`
-   - `TFMini-S FRONT: OK`
+   - Banner: `WRO FE 2026 -- Team Faith -- v13.0 main firmware`
+   - `Mode: OPEN` or `OBSTACLE` (matches `OBSTACLE_MODE` in `wro_config_v13.h`)
+   - `WiFi: OFF, BT: OFF` (Rule 11.10)
+   - `AS5600 dual I2C: OK`
+   - `VL53L1X FRONT: OK at 0x30`
+   - `VL53L1X SIDE: OK at 0x31`
    - `Camera UART2 ready`
    - `ICM-20948 IMU: OK`
    - `Calibrating gyro Z bias...` followed by bias value
    - `System ready. Press E-Stop to start.`
-4. Trigger E-Stop physically (press+release) and verify the firmware accepts it as start.
+4. Press + release E-Stop. Verify the firmware accepts it as start.
 5. While the race runs, hold E-Stop and verify motor stops in <50 ms.
 
-If FAIL:
-- No floor tests
-- Fix firmware/serial errors first
+If FAIL → no floor tests; fix the firmware/serial errors first.
 
 ### Step D — Actuator sanity
 - Steering centered at startup
 - Left/right steering direction correct
-- Motor direction matches intended forward command
-- No motor jitter when target speed is 0
+- Motor direction matches "forward" command
+- No motor jitter when target speed = 0
 
-If FAIL:
-- Re-check servo center and BTS7960 polarity
-- Repeat Step D until stable
+If FAIL → re-check servo center calibration and BTS7960 polarity.
 
 ---
 
-## 8) Calibration Requirements
+## 8) Calibration
 
 ### IMU gyro
-- Keep robot still during calibration
+- Robot still during calibration
 - Acceptance: `gyroZbias < 0.05`
-- Acceptance: static yaw drift <= 2 deg in 30 seconds
-- Repeat calibration if drift exceeds threshold
+- Acceptance: static yaw drift ≤ 2° in 30 s
 
 ### Steering center
-- Mechanical wheels straight at SERVO_CENTER
-- Adjust horn physically first, code trim second
-- Acceptance: robot tracks straight for 1 m with no steering trim changes
+- Wheels mechanically straight at `SERVO_CENTER_US`
+- Adjust horn physically first, then trim software constants
+- Acceptance: tracks straight for 1 m without steering trim
 
 ### Camera pipeline
-- Ensure UART protocol is v3.0 with 6 fields + CRC:
-   - `RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n`
-- Validate runtime ranges:
-   - RedX/GreenX: -160..160
-   - RedDist/GreenDist: 0..999
+- UART v3.0 with 6 fields + XOR checksum
+  - `RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n`
+- Range checks:
+  - RedX / GreenX: -160..160
+  - RedDist / GreenDist: 0..999
 
 ### Odometry
-- Run 3 x 100 cm straight tests
-- Acceptance: error <= 2 cm on control run
+- 3 × 100 cm straight runs
+- Acceptance: ≤ 2 cm error on control run
 
 ### PID and heading
-- Start from firmware defaults: P=0.55, I=0.002, D=0.18, GyroKp=1.20
+- Start from v13 defaults (in `wro_config_v13.h`):
+  - `PILLAR_KP = 0.45`, `PILLAR_KI = 0.001`, `PILLAR_KD = 0.30`
+  - `HEADING_KP = 12.0`, `HEADING_KI = 0`, `HEADING_KD = 2.0`
 - Tune Kp first, then Kd, then Ki
-- Record each change in tuning log
+- Record every change in `WRO_PID_Tuning_Log.csv`
 
 ---
 
-## 9) Runtime Health Indicators to Watch
+## 9) Runtime health indicators
 - Camera timeout warnings
 - Encoder loss alarms
 - Unexpected lap jumps
-- E-Stop release/engage logs
-- Oscillation in steering (too high Kp)
-- Slow correction (too low Kp)
+- E-Stop release/engage entries
+- Oscillating steering (Kp too high)
+- Sluggish correction (Kp too low)
 
 ---
 
-## 10) Track Testing Plan (must do in order)
+## 10) Track testing plan (in order)
 
-Run tests in this sequence (see detailed criteria in `docs/WRO_Track_Test_Cases.md`):
-1. TC-01 Stand Safety Test
+Run in this sequence (see [`docs/WRO_Track_Test_Cases.md`](WRO_Track_Test_Cases.md)):
+1. TC-01 Stand Safety
 2. TC-02 E-Stop Reaction
 3. TC-03 Camera Timeout Stop
 4. TC-04 Encoder Loss Handling
@@ -223,41 +227,46 @@ Run tests in this sequence (see detailed criteria in `docs/WRO_Track_Test_Cases.
 7. TC-07 Start Procedure Compliance
 8. TC-08 Finish Behavior Compliance
 
-Record each run:
-- Kp/Kd
-- Battery voltage
-- Floor condition
-- Laps completed
-- Failure mode if any
+Record per run: Kp/Kd, battery voltage, floor condition, laps completed, failure mode (if any).
 
 ---
 
-## 11) Common Failure Modes + Quick Fixes
+## 11) Common failure modes + quick fixes
 
-### TCA/IMU not found
-- Recheck channel mapping and address
-- Recheck 3.3V/GND/SDA/SCL
-- Reduce bus noise, shorten I2C wires
+### Wrong devices on the I2C scan
+- Confirm you ran `scan_i2c_v13.cpp` (target 2), not the legacy v11/v12 versions
+- `0x70` showing up = stray TCA9548A still wired (shouldn't be in v13)
+- Missing `0x29` after boot = VL53L1X XSHUT pin not driven LOW correctly
+
+### IMU/encoder not found
+- Verify `0x68` for IMU (AD0 must be GND in v13)
+- Verify `0x36` on the correct bus (Left → I2C0, Right → I2C1)
+- Check 3.3 V + GND + SDA + SCL with a multimeter
+- Reduce bus noise; shorten I2C wires; verify 4.7 kΩ pull-ups present on each bus
 
 ### Random camera loss
-- Verify OpenMV UART baud and packet format
-- Check RX/TX crossed correctly
-- Improve cable fixation and grounding
+- Verify OpenMV UART baud (115200) and packet format
+- Confirm RX/TX crossed
+- Improve cable strain relief and ground
 
 ### Encoder dropouts
-- Check AS5600 supply and magnet alignment
-- Check I2C pull-ups and wiring quality
-- Confirm channel selection logic
+- Check AS5600 supply (3.3 V) and magnet alignment (1-2 mm gap, centered)
+- Check 4.7 kΩ pull-ups on the relevant I2C bus
+- Run `test_encoders.cpp` (target 8) to inspect raw data live
 
-### Car oscillates strongly
-- Lower Kp
-- Increase damping (Kd) slightly
-- Reduce max speed in sharp turns
+### VL53L1X stuck at default `0x29`
+- XSHUT pin floating or shorted — verify `vl53l1x_dual.h` boot order
+- One sensor's XSHUT released before another's address was written — single-step the boot dance with debug prints
 
-### Robot drifts in heading
-- Recalibrate gyro bias
-- Reduce vibration near IMU
-- Validate dt stability and integration behavior
+### Robot oscillates
+- Lower `PILLAR_KP` / `HEADING_KP`
+- Increase damping (`PILLAR_KD` / `HEADING_KD`)
+- Reduce max speed (`OBS_MAX_PWM`, `OPEN_MAX_PWM`)
+
+### Heading drift
+- Recalibrate gyro on a still surface
+- Reduce IMU vibration (foam mount)
+- Verify the snap-to-90° works after each corner
 
 Mandatory stop conditions:
 - Repeated SAFE_STOP with unknown cause
@@ -266,22 +275,22 @@ Mandatory stop conditions:
 
 ---
 
-## 12) Competition-Day Go/No-Go Checklist
+## 12) Competition-day Go / No-Go
 
-- One power switch only (WRO 9.10)
-- One start button only, with waiting state before start (WRO 9.11)
-- No data entry through physical mode switches/adjustments (WRO 9.9)
-- Spare wires/connectors/sensors ready
-- Backup flashed ESP32 ready
-- Printed wiring map and quick checklist available
-- Final tested firmware version tagged
+- One power switch only (Rule 9.10)
+- One start button only with a waiting state (Rule 9.11) — same E-Stop button
+- No physical mode switches (Rule 9.9) — `OBSTACLE_MODE` is compile-time
+- Spare wires / connectors / sensors ready
+- Backup flashed ESP32-S3 ready
+- Printed wiring map and Quick Race Checklist on hand
+- Final firmware version tagged in git
 - Battery fully charged and verified
 - Tool kit ready (hex keys, screwdrivers, tape, zip ties)
 - Last full pre-flight completed and signed
 
-Go/No-Go decision:
-- `GO` only if all critical checks are PASS
-- `NO-GO` if any safety or rule check is FAIL
+Decision:
+- `GO` only if every critical check is PASS
+- `NO-GO` if any safety or rule check fails
 
 ---
 
@@ -293,8 +302,8 @@ Go/No-Go decision:
 
 ---
 
-## 14) Suggested Next Improvements
-- Add automated preflight script that validates scanner output against expected map
-- Add telemetry CSV export with timestamps for fault post-analysis
-- Add explicit voltage sag alarm threshold in firmware and checklist
-- Keep `WRO_Rule_Compliance_Matrix.md` and audit docs updated for each release
+## 14) Suggested next improvements
+- Automated preflight script that diffs scanner output against the expected map
+- Telemetry CSV export with timestamps for fault post-analysis
+- Explicit voltage-sag alarm threshold in firmware and checklist
+- Keep `WRO_Rule_Compliance_Matrix.md` and audit docs updated each release

@@ -1,24 +1,27 @@
-// WRO — Тест двух AS5600 энкодеров на двух I2C шинах ESP32
+// WRO v13 — Standalone test for 2x AS5600 on dual I2C (ESP32-S3)
 //
-// Шина 1 (Wire):  SDA=21, SCL=22  → ЛЕВЫЙ энкодер
-// Шина 2 (Wire1): SDA=25, SCL=26  → ПРАВЫЙ энкодер
+// I2C0 (Wire):  SDA=GPIO 8,  SCL=GPIO 9   -> LEFT  encoder
+// I2C1 (Wire1): SDA=GPIO 11, SCL=GPIO 12  -> RIGHT encoder
+//
+// Both encoders share the fixed AS5600 address 0x36; the bus split is
+// what avoids a collision (no TCA9548A mux).
 //
 // Serial Monitor: 115200 baud
-// Крути колёса руками — значения должны меняться плавно.
+// Spin the wheels by hand — values should change smoothly.
 
 #include <Wire.h>
 
-#define SDA1 21
-#define SCL1 22
-#define SDA2 25
-#define SCL2 26
+#define SDA0 8
+#define SCL0 9
+#define SDA1 11
+#define SCL1 12
 
 #define AS5600_ADDR       0x36
 #define REG_RAW_ANGLE_H2  0x0E
 #define REG_STATUS        0x0B
 #define REG_AGC           0x1A
 
-// Длина окружности одного колеса (1 круг = 14.6 см = 146.0 мм)
+// Wheel circumference (1 revolution = 14.6 cm = 146.0 mm)
 #define WHEEL_CIRC_MM 146.0
 #define TICKS_PER_REV 4096
 
@@ -82,37 +85,37 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // Включаем внутреннюю подтяжку (pull-up) для уверенного I2C сигнала
+  // Enable internal pull-ups so I2C is reliable even without external 4.7k.
+  pinMode(SDA0, INPUT_PULLUP);
+  pinMode(SCL0, INPUT_PULLUP);
   pinMode(SDA1, INPUT_PULLUP);
   pinMode(SCL1, INPUT_PULLUP);
-  pinMode(SDA2, INPUT_PULLUP);
-  pinMode(SCL2, INPUT_PULLUP);
 
-  Wire.begin(SDA1, SCL1);
+  Wire.begin(SDA0, SCL0);
   Wire.setClock(400000);
 
-  Wire1.begin(SDA2, SCL2);
+  Wire1.begin(SDA1, SCL1);
   Wire1.setClock(400000);
 
-  Serial.println("\n=== WRO ENCODER TEST (две I2C шины) ===");
-  Serial.print("Шина 1 (левый):  SDA=");  Serial.print(SDA1);
-  Serial.print(", SCL=");                Serial.println(SCL1);
-  Serial.print("Шина 2 (правый): SDA="); Serial.print(SDA2);
-  Serial.print(", SCL=");                Serial.println(SCL2);
+  Serial.println("\n=== WRO v13 ENCODER TEST (dual I2C) ===");
+  Serial.print("I2C0 (left):  SDA=");  Serial.print(SDA0);
+  Serial.print(", SCL=");               Serial.println(SCL0);
+  Serial.print("I2C1 (right): SDA=");  Serial.print(SDA1);
+  Serial.print(", SCL=");               Serial.println(SCL1);
 
-  Serial.print("Левый  AS5600: ");
-  Serial.println(checkPresent(Wire)  ? "НАЙДЕН" : "НЕ НАЙДЕН!");
-  Serial.print("Правый AS5600: ");
-  Serial.println(checkPresent(Wire1) ? "НАЙДЕН" : "НЕ НАЙДЕН!");
+  Serial.print("Left  AS5600: ");
+  Serial.println(checkPresent(Wire)  ? "FOUND" : "NOT FOUND!");
+  Serial.print("Right AS5600: ");
+  Serial.println(checkPresent(Wire1) ? "FOUND" : "NOT FOUND!");
 
-  Serial.print("Магнит левый:  "); Serial.print(readMagnet(Wire));
+  Serial.print("Left  magnet:  "); Serial.print(readMagnet(Wire));
   Serial.print("  AGC=");          Serial.println(readAGC(Wire));
-  Serial.print("Магнит правый: "); Serial.print(readMagnet(Wire1));
+  Serial.print("Right magnet:  "); Serial.print(readMagnet(Wire1));
   Serial.print("  AGC=");          Serial.println(readAGC(Wire1));
 
-  Serial.println("\nКрути колёса руками. 1 оборот = 4096 тиков.\n");
-  Serial.println("ЛЕВЫЙ                       ПРАВЫЙ");
-  Serial.println("raw  градус  тики  см       raw  градус  тики  см");
+  Serial.println("\nSpin the wheels by hand. 1 revolution = 4096 ticks.\n");
+  Serial.println("LEFT                        RIGHT");
+  Serial.println("raw  deg   ticks  cm        raw  deg   ticks  cm");
 }
 
 void loop() {
@@ -127,7 +130,7 @@ void loop() {
     Serial.print(totalLeft); Serial.print("\t");
     Serial.print(totalLeft / ticksPerCM, 1); Serial.print("cm");
   } else {
-    Serial.print("ОШИБКА\t-\t-\t-");
+    Serial.print("ERROR\t-\t-\t-");
   }
 
   Serial.print("    |    ");
@@ -138,7 +141,7 @@ void loop() {
     Serial.print(totalRight); Serial.print("\t");
     Serial.print(totalRight / ticksPerCM, 1); Serial.print("cm");
   } else {
-    Serial.print("ОШИБКА\t-\t-\t-");
+    Serial.print("ERROR\t-\t-\t-");
   }
 
   Serial.println();

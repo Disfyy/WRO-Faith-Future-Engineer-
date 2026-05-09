@@ -1,15 +1,15 @@
-# HSP 94182 1/16 — CAD-модель (зависимости Python)
+# HSP 94182 1/16 -- CAD model (Python deps)
 # ----------------------------------------------------------------
-# Установка:
+# Install:
 #     pip install -r requirements.txt
 #
-# Что устанавливается:
-#   cadquery       — параметрическое CAD-моделирование на Python
-#                    использует OpenCascade (OCCT) под капотом
-#   cadquery-ocp   — OCCT биндинги (тянутся автоматически с cadquery)
+# What it pulls in:
+#   cadquery       -- parametric Python CAD,
+#                     uses OpenCascade (OCCT) under the hood
+#   cadquery-ocp   -- OCCT bindings (auto-installed with cadquery)
 #
-# Размер на диске: ~500 МБ (в основном OpenCascade библиотеки).
-# Поддерживаемые ОС: macOS, Linux, Windows. Python ≥ 3.9.
+# On-disk size: ~500 MB (mostly the OpenCascade libraries).
+# Supported OS: macOS, Linux, Windows. Requires Python >= 3.9.
 # ----------------------------------------------------------------
 
 cadquery>=2.5.0
