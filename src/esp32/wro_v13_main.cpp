@@ -32,6 +32,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <esp_bt.h>
+#include <esp_task_wdt.h>
 
 #include "wro_config_v13.h"
 #include "wro_imu.h"
@@ -103,6 +104,18 @@ void setup() {
   Serial.println(" WiFi: OFF, BT: OFF (Rule 11.10)");
   Serial.println("============================================================");
 
+  // ─── Task watchdog (defends against I2C-stall / library hangs) ─────
+  // 500 ms is generous: gyro calibration (3 s) calls esp_task_wdt_reset()
+  // each iteration via wdt_pet(), and the main loop runs at 10 ms so a
+  // 500 ms timeout means ~50 missed ticks before reboot.
+  esp_task_wdt_config_t wdt_cfg = {
+    .timeout_ms = 500,
+    .idle_core_mask = 0,
+    .trigger_panic = true,
+  };
+  esp_task_wdt_init(&wdt_cfg);
+  esp_task_wdt_add(NULL);          // subscribe loopTask to the WDT
+
   // ─── E-Stop input (early so any held-button bug is grace-windowed) ──
   estop_init();
 
@@ -144,6 +157,7 @@ void setup() {
     while (1) {
       digitalWrite(LED_PIN, HIGH); delay(100);
       digitalWrite(LED_PIN, LOW);  delay(100);
+      esp_task_wdt_reset();           // clean blink-of-death, not a reboot loop
     }
   } else {
     Serial.println("ICM-20948 IMU: OK");
@@ -169,6 +183,11 @@ void loop() {
   unsigned long now = millis();
   if (now - lastLoopMs < (unsigned long)LOOP_INTERVAL_MS) return;
   lastLoopMs = now;
+
+  // Pet the watchdog at the top of every active tick. If any blocking
+  // call below stalls (I2C lock-up, library timeout) for >500 ms, the
+  // ESP32 will reboot rather than sit motionless on the track.
+  esp_task_wdt_reset();
 
   // ─── Sensor updates (HAL → estimation) ─────────────────────
   imu_update();

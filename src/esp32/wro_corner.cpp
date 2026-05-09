@@ -104,9 +104,12 @@ void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned lo
 
       float delta = fabsf(wrap180(yaw_deg - turnStartYaw));
       if (delta >= TURN_TARGET_DEG) {
-        g_corner_exit_yaw = yaw_deg;
-        g_corner_just_exited = true;
+        // Order matters: enter() resets g_corner_just_exited, so we must
+        // set the flag AFTER entering CN_EXIT — otherwise race_fsm never
+        // sees the exit edge and never snaps the heading target.
         enter(CN_EXIT, now);
+        g_corner_exit_yaw    = yaw_deg;
+        g_corner_just_exited = true;
       }
       break;
     }
