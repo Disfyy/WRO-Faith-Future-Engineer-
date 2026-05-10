@@ -51,6 +51,13 @@
 #define WALL_TARGET_MM          100
 #define WALL_KP                 0.40f   // µs per mm error
 #define WALL_KD                 0.05f
+// Physical mounting of the side VL53L1X on the chassis:
+//   +1 = sensor on the RIGHT side of the robot
+//   -1 = sensor on the LEFT  side of the robot
+// Combined with the live lap direction this keeps the wall-PID sign correct
+// in both CW and CCW races. Verify on first bench run; flip sign if the
+// robot pulls AWAY from the wall instead of toward it.
+#define WALL_TOF_SIDE          (+1)
 
 // ============================================================
 // 3.  OBSTACLE CHALLENGE — pillar avoidance PID

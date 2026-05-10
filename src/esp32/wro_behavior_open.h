@@ -19,6 +19,11 @@ void  open_reset();
 void  open_set_target_heading(float deg);
 float open_get_target_heading();
 
+// Set the lap direction (+1 = CW, -1 = CCW). Drives the sign of the
+// side-wall correction so the same physical sensor pulls the robot back
+// toward the desired wall regardless of lap direction.
+void  open_set_direction(int dir);
+
 // Compute control outputs for this tick. Pass current yaw (deg).
 // Outputs are written to global g_open_steer_us / g_open_speed_pwm.
 void  open_update(float yaw_deg, int side_tof_mm);

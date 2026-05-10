@@ -12,6 +12,7 @@ int g_open_speed_pwm = OPEN_MAX_PWM;
 static float headingTarget = 0.0f;
 static PidState pidHeading;
 static unsigned long lastUpdateMs = 0;
+static int   trackDirection = -1;        // +1 = CW, -1 = CCW
 
 void open_init() {
   pid_init(pidHeading,
@@ -32,6 +33,10 @@ void open_set_target_heading(float deg) {
 }
 float open_get_target_heading() { return headingTarget; }
 
+void open_set_direction(int dir) {
+  trackDirection = (dir >= 0) ? +1 : -1;
+}
+
 void open_update(float yaw_deg, int side_tof_mm) {
   unsigned long now = millis();
   float dt = (now - lastUpdateMs) * 0.001f;
@@ -43,9 +48,14 @@ void open_update(float yaw_deg, int side_tof_mm) {
 
 #if HAS_SIDE_TOF
   // Optional side-wall correction. side_tof_mm > 0 means valid reading.
+  // Sign depends on lap direction × physical mounting side of the ToF.
+  // WALL_TOF_SIDE = +1 when the side sensor is on the right of the chassis,
+  // -1 if mounted on the left. Combined with trackDirection, this keeps the
+  // same physical sensor pulling the robot back toward its target wall in
+  // both CW and CCW races without re-tuning WALL_KP.
   if (side_tof_mm > 0 && side_tof_mm < 9999) {
     float wallErr = (float)(side_tof_mm - WALL_TARGET_MM);
-    u += WALL_KP * wallErr;
+    u += (float)(trackDirection * WALL_TOF_SIDE) * WALL_KP * wallErr;
   }
 #else
   (void)side_tof_mm;

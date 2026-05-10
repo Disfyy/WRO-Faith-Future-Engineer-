@@ -4,6 +4,7 @@
 #include <Adafruit_ICM20948.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <esp_task_wdt.h>
 #include "wro_config_v13.h"
 #include "wro_imu.h"
 
@@ -48,6 +49,9 @@ bool imu_calibrate_gyro() {
       n++;
     }
     if ((i % 50) == 0) Serial.print(".");
+    // Calibration blocks for ~3 s; pet the WDT each iteration so we don't
+    // false-trigger the 500 ms task watchdog set up in setup().
+    esp_task_wdt_reset();
     delay(LOOP_INTERVAL_MS);
   }
   Serial.println();

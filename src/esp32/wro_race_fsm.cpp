@@ -27,6 +27,15 @@ int g_lap_count     = 0;
 static int  globalDirection = -1;
 static bool directionConfirmed = false;
 
+// Direction-detection debounce. The OpenMV camera can briefly flag both
+// orange and blue at sector boundaries or under threshold ambiguity, so we
+// require an EXCLUSIVE color (one bit, not the other) to hold for several
+// consecutive frames before locking direction. Without this debounce the
+// race could lock to the wrong direction on a stray dual-bit frame.
+#define DIRECTION_CONFIRM_FRAMES 4
+static int  dirVoteCw  = 0;
+static int  dirVoteCcw = 0;
+
 static int  prevRaceState         = RS_INIT;
 static int  magentaConfirmStreak  = 0;
 static unsigned long lastLapMs    = 0;
@@ -44,14 +53,35 @@ static void enterState(int s) {
 static void detectDirection() {
   if (directionConfirmed) return;
   if (!g_cam.online) return;
-  if (g_cam.modeFlag & CAM_FLAG_ORANGE) {
-    globalDirection = +1;        // CW
+
+  bool orange = (g_cam.modeFlag & CAM_FLAG_ORANGE) != 0;
+  bool blue   = (g_cam.modeFlag & CAM_FLAG_BLUE)   != 0;
+
+  // Require exclusivity. If both bits fire (sector boundary, threshold
+  // overlap, or a confused frame) the vote is wasted, not credited to
+  // whichever bit happens to come first.
+  if (orange && !blue) {
+    dirVoteCw++;
+    dirVoteCcw = 0;
+  } else if (blue && !orange) {
+    dirVoteCcw++;
+    dirVoteCw = 0;
+  } else {
+    // ambiguous — decay both counters slowly toward zero
+    if (dirVoteCw  > 0) dirVoteCw--;
+    if (dirVoteCcw > 0) dirVoteCcw--;
+  }
+
+  if (dirVoteCw >= DIRECTION_CONFIRM_FRAMES) {
+    globalDirection = +1;
     directionConfirmed = true;
-  } else if (g_cam.modeFlag & CAM_FLAG_BLUE) {
-    globalDirection = -1;        // CCW
+  } else if (dirVoteCcw >= DIRECTION_CONFIRM_FRAMES) {
+    globalDirection = -1;
     directionConfirmed = true;
   }
+
   corner_set_direction(globalDirection);
+  open_set_direction(globalDirection);
 }
 
 static void updateLapCounter(unsigned long now) {
@@ -143,6 +173,8 @@ void race_init() {
   g_lap_count = 0;
   globalDirection = -1;
   directionConfirmed = false;
+  dirVoteCw  = 0;
+  dirVoteCcw = 0;
   magentaConfirmStreak = 0;
   lastLapMs = 0;
   lastLapYawTotal = 0.0f;
@@ -196,6 +228,7 @@ void race_update() {
         obs_set_target_heading(h0);
         corner_reset();
         corner_set_direction(globalDirection);
+        open_set_direction(globalDirection);
 #if OBSTACLE_MODE == 1
         enterState(RS_RUN_OBS);
 #else
