@@ -3,7 +3,7 @@
 Date: 9 April 2026 (v11-era audit) — **v13 re-audit pending**
 Scope: Official WRO 2026 rules + internal project safety rules
 
-> ⚠️ **v13 status (May 2026):** All `src/esp32/eps323.cpp:NNN` line references in this matrix are **stale** — `eps323.cpp` is now `legacy_eps323.cpp` (v11 reference, inactive). The active firmware is `src/esp32/wro_v13_main.cpp` and its modules `wro_*.{cpp,h}`. The mapping below should be regenerated against the v13 source. Until then, treat status entries as historical.
+> ⚠️ **v13 status (May 2026):** All `src/esp32/eps323.cpp:NNN` line references in this matrix are **stale** — `eps323.cpp` is now `src/esp32/legacy/legacy_eps323.cpp` (v11 reference, inactive). The active firmware is `src/esp32/wro_v13_main.cpp` and its modules `wro_*.{cpp,h}`. The mapping below should be regenerated against the v13 source. Until then, treat status entries as historical.
 >
 > Rule compliance points that map to v13 modules:
 > - **Rule 9.9** (compile-time mode): `src/esp32/wro_config_v13.h` — `#define OBSTACLE_MODE 0/1`

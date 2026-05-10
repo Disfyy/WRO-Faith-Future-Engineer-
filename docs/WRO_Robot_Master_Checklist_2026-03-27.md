@@ -105,7 +105,7 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 - `test_encoders.cpp` (AS5600 dual-I2C test — target 8)
 - `test_vl53l1x.cpp` (VL53L1X with XSHUT remap — target 9)
 - `bench_test_v13.cpp` (full bench — target 10)
-- `legacy_eps323.cpp` and other `legacy_*.cpp` (v11 reference, not active)
+- `src/esp32/legacy/legacy_eps323.cpp` and other `legacy_*.cpp` (v11 reference, archived, not active)
 
 ### Key protocol file
 - `WRO_OpenMV_UART_Protocol.md` (v3.0 — 6 fields + XOR checksum)

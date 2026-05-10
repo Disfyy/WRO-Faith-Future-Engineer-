@@ -123,7 +123,7 @@ WRO_Project_Pack/
 │   │   ├── test_encoders.cpp     # AS5600 dual-I2C test (target 8)
 │   │   ├── test_vl53l1x.cpp      # VL53L1X test (target 9)
 │   │   ├── scan_i2c_v13.cpp      # 2-bus I2C scanner (target 2)
-│   │   └── legacy_*.cpp          # v11 reference (inactive)
+│   │   └── legacy/               # v11 archived sources (legacy_*.cpp + README)
 │   └── openmv/                   # MicroPython vision
 ├── schemes/                      # Wiring diagrams (v13)
 ├── models/HSP94182_3D/           # CAD chassis files (STL/STEP/SCAD)
@@ -189,7 +189,7 @@ Single character + value, newline-terminated:
 ## How Claude Should Help
 When the user asks about this project, Claude should:
 - Always reference actual file paths in `/Users/nr_ulan/Desktop/WRO_Project_Pack/`
-- Treat **v13** as current; treat `legacy_*.cpp` and any v12 references in older docs as historical
+- Treat **v13** as current; treat `src/esp32/legacy/legacy_*.cpp` and any v12 references in older docs as historical
 - Read `wro_hw_config_v13.h`, `wro_config_v13.h`, `wro_v13_main.cpp` before answering hardware/code questions
 - Use the v13 tunables above when discussing PID / corner / speed
 - Remember the I2C topology: AS5600 Left + IMU + VL53L1X Front share Wire (I2C0); AS5600 Right + VL53L1X Side share Wire1 (I2C1)

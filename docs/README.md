@@ -13,8 +13,8 @@ This folder contains firmware, diagnostics, and operation documents for the WRO 
 - `test_encoders.cpp` / `test_vl53l1x.cpp` — per-sensor tests
 
 ## Legacy firmware (v11, kept for reference)
-- `legacy_eps323.cpp` — old v11 main robot firmware
-- `legacy_test_*.cpp` — old v11 test/calibration utilities
+- `src/esp32/legacy/legacy_eps323.cpp` — old v11 main robot firmware (archived)
+- `src/esp32/legacy/legacy_test_*.cpp` — old v11 test/calibration utilities (archived)
 - WRO_Config_Template.h — original tunable parameters template
 
 ## Operation docs

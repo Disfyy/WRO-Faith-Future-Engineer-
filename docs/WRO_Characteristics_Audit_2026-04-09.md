@@ -3,11 +3,11 @@
 Date: 9 April 2026 — **v11 historical audit, line numbers stale; v13 re-audit pending**
 Scope: Compare documented template values with active firmware/runtime values
 
-> ⚠️ **v13 status (May 2026):** This audit was performed against `src/esp32/eps323.cpp` (now `legacy_eps323.cpp`) and the line numbers below no longer point at active code. The active firmware is `src/esp32/wro_v13_main.cpp` plus modular `wro_*.{cpp,h}` files. Tunables now live in `src/esp32/wro_config_v13.h` (gains, thresholds, mode flag) and `src/esp32/wro_hw_config_v13.h` (pin map, encoder/odometry constants). A re-audit against the v13 sources is required.
+> ⚠️ **v13 status (May 2026):** This audit was performed against `src/esp32/eps323.cpp` (now `src/esp32/legacy/legacy_eps323.cpp`) and the line numbers below no longer point at active code. The active firmware is `src/esp32/wro_v13_main.cpp` plus modular `wro_*.{cpp,h}` files. Tunables now live in `src/esp32/wro_config_v13.h` (gains, thresholds, mode flag) and `src/esp32/wro_hw_config_v13.h` (pin map, encoder/odometry constants). A re-audit against the v13 sources is required.
 
 Compared sources (v11 historical):
 - `docs/WRO_Config_Template.h`
-- `src/esp32/legacy_eps323.cpp` (was `src/esp32/eps323.cpp`)
+- `src/esp32/legacy/legacy_eps323.cpp` (was `src/esp32/eps323.cpp`)
 - `src/openmv/openmv_main.py`
 
 ---
