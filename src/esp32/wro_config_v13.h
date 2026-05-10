@@ -119,6 +119,8 @@
 #define TELEMETRY_INTERVAL_MS   200
 #define GYRO_CALIB_SAMPLES_V13  300     // ~3 s @ 10 ms
 #define IMU_DT_MAX              0.05f   // s — clamp for yaw integration
+#define WDT_TIMEOUT_MS          200     // task watchdog: 20× nominal loop period;
+                                        // panic-reset if loop hangs longer than this
 
 // ============================================================
 // 10. SERVO SAFETY MARGIN

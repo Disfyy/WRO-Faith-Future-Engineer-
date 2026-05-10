@@ -32,6 +32,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <esp_bt.h>
+#include <esp_task_wdt.h>
 
 #include "wro_config_v13.h"
 #include "wro_imu.h"
@@ -160,6 +161,20 @@ void setup() {
   tlm_init();
   race_init();
 
+  // Arm task watchdog last — once registered, every loop iteration must
+  // call esp_task_wdt_reset() within WDT_TIMEOUT_MS or the board hard-resets.
+  // Done after gyro calibration (which uses delay() and would tickle the WDT).
+  esp_task_wdt_config_t wdt_cfg = {
+      .timeout_ms    = WDT_TIMEOUT_MS,
+      .idle_core_mask = 0,
+      .trigger_panic = true,
+  };
+  esp_task_wdt_reconfigure(&wdt_cfg);
+  esp_task_wdt_add(NULL);
+  Serial.print("Task watchdog armed at ");
+  Serial.print(WDT_TIMEOUT_MS);
+  Serial.println(" ms");
+
   Serial.println("System ready. Press E-Stop to start.");
   digitalWrite(LED_PIN, HIGH);
   lastLoopMs = millis();
@@ -187,6 +202,9 @@ void loop() {
   // ─── Telemetry (rate-limited internally) ───────────────────
   tlm_update_periodic(g_race_state, g_corner_state, g_lap_count,
                       commandSpeed, g_cmd_steer_us);
+
+  // ─── Pet the dog ───────────────────────────────────────────
+  esp_task_wdt_reset();
 }
 
 #endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
