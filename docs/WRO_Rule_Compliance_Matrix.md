@@ -14,7 +14,7 @@ Scope: Official WRO 2026 rules + internal project safety rules
 > - **Internal E-Stop safety**: `src/esp32/wro_estop.cpp` + `src/esp32/wro_race_fsm.cpp` (RS_SAFE_STOP path)
 
 Official source:
-- `WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
+- `docs/rules/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
 - Extracted anchors used in this matrix:
   - Page 17: rules 9.6, 9.9, 9.10, 9.11, 9.13, 9.14
   - Page 19: rules 9.24.2, 9.24.4

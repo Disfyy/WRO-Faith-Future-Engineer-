@@ -22,7 +22,7 @@ from pyb import UART, LED
 #   X-position of magenta block (-160..160) when bit 2 is set, else 0.
 #
 # References to WRO 2026 Future Engineers Game Rules
-# (WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.md):
+# (docs/rules/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.md):
 #   13.19  Traffic-sign pillars: 50 x 50 x 100 mm
 #   13.21  Red pillar:    RGB (238, 39, 55)
 #   13.22  Green pillar:  RGB (68, 214, 44)

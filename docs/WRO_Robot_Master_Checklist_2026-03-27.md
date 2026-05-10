@@ -16,7 +16,7 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 
 ## 2) Compliance references
 
-- Official rules: `WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
+- Official rules: `docs/rules/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
 - Rule mapping: `docs/WRO_Rule_Compliance_Matrix.md`
 - Characteristics audit: `docs/WRO_Characteristics_Audit_2026-04-09.md`
 - Main build / operation guide: `docs/WRO_Robot_Assembly_and_Startup_Guide.md`
