@@ -55,16 +55,21 @@ static void detectDirection() {
 }
 
 static void updateLapCounter(unsigned long now) {
-  // Primary: gyro 360° accumulator. Lap increments on each completed full revolution.
-  float laps = fabsf(g_yaw_total) / GYRO_LAP_DEG;
-  int  ilaps = (int)laps;
+  // Primary: gyro 360° accumulator, signed against the locked race direction.
+  // - Backward yaw → ilaps decreases → no spurious lap fire.
+  // - lastIlaps is monotonic (never regresses) so a brief back-spin then
+  //   forward return can't re-credit the same lap once cooldown expires.
+  // - If direction never confirmed (stays at -1 default) and the actual race
+  //   is CW, ilaps will stay ≤ 0 and no lap fires. Fail-safe over fail-loud.
+  float laps  = (g_yaw_total * (float)globalDirection) / GYRO_LAP_DEG;
+  int   ilaps = (int)laps;
   static int lastIlaps = 0;
   if (ilaps > lastIlaps && (now - lastLapMs) > LAP_COOLDOWN_MS) {
     g_lap_count++;
     lastLapMs = now;
     lastLapYawTotal = g_yaw_total;
   }
-  lastIlaps = ilaps;
+  if (ilaps > lastIlaps) lastIlaps = ilaps;
 
   // Sanity-check secondary: camera line bits — accept if gyro fired within grace window.
   bool lineNow = (g_cam.modeFlag & (CAM_FLAG_ORANGE | CAM_FLAG_BLUE)) != 0;
@@ -290,8 +295,7 @@ void race_update() {
     enterState(RS_SAFE_STOP);
   }
 
-  // Lap counter must use absolute totalRotation since start.
-  (void)lastLapYawTotal;  // reserved for future direction-aware checks
+  (void)lastLapYawTotal;  // set on each lap; reserved for future per-lap drift sanity checks
 }
 
 #endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN

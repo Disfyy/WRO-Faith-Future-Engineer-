@@ -11,7 +11,8 @@
  *   bit0: orange line  (CW indicator)
  *   bit1: blue   line  (CCW indicator)
  *   bit2: magenta parking block visible
- *   bit3: black wall close (<40 cm)
+ *   bit3: RESERVED — wall detection moved to VL53L1X in v13.
+ *         Camera always emits 0; ESP32 ignores this bit.
  *
  * Sanity: distance values are clamped to [0, CAM_DIST_MAX_CM]; a frame-to-frame
  *         jump > CAM_DIST_JUMP_MAX_CM is rejected (defends against XOR collisions).
@@ -37,7 +38,7 @@ struct CameraData {
 #define CAM_FLAG_ORANGE   1
 #define CAM_FLAG_BLUE     2
 #define CAM_FLAG_MAGENTA  4
-#define CAM_FLAG_WALL     8
+// bit 3 is reserved (legacy wall detection); camera emits 0 in v13.
 
 void cam_init();
 void cam_update();   // call every loop tick — non-blocking byte poll
