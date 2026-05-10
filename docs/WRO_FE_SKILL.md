@@ -126,7 +126,7 @@ WRO_Project_Pack/
 │   │   └── legacy_*.cpp          # v11 reference (inactive)
 │   └── openmv/                   # MicroPython vision
 ├── schemes/                      # Wiring diagrams (v13)
-├── models/, HSP94182_3D/         # CAD chassis files
+├── models/HSP94182_3D/           # CAD chassis files (STL/STEP/SCAD)
 ├── docs/                         # Checklists, guides, logs
 ├── t-photos/, v-photos/, video/  # Required WRO assets
 ├── CHANGELOG.md
