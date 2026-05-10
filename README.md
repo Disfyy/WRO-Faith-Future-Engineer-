@@ -40,16 +40,29 @@ Our software is divided into two continuous independent threads:
 ## 📂 Repository Structure
 
 ```text
-├── models             # 3D chassis design files (STL/STEP)
-├── schemes            # Electromechanical diagrams (Mermaid + rendered)
-├── src                
-│   ├── esp32          # Core ESP32-S3 control firmware (C++) — v13 modules
-│   └── openmv         # Machine Vision scripts for OpenMV (MicroPython)
-├── t-photos           # Team presentation photos
-├── v-photos           # Vehicle engineering photos
-├── video              # Demonstration recordings
-├── docs               # Checklists, Logs, Setup Guides
-└── README.md          # You are here
+├── models/HSP94182_3D     # 3D chassis CAD (STL / STEP / SCAD / Python + viewer.html)
+├── schemes                # Electromechanical diagrams (Mermaid + rendered PNG/SVG)
+├── src
+│   ├── esp32              # ESP32-S3 control firmware (C++) — v13 modular layers
+│   │   └── legacy         # v11 archived sources (legacy_*.cpp + README)
+│   └── openmv             # MicroPython machine-vision scripts
+├── sketches               # Standalone Arduino sketches (bench tests, servo cal)
+├── other                  # Engineering writeups by WRO topic
+│   ├── mobility-management              # Drivetrain, steering, chassis, control loops
+│   ├── power-and-sense-management       # Battery, power dist., sensor stack
+│   └── obstacle-management              # Obstacle Challenge strategy + parking
+├── docs                   # Project documentation
+│   ├── INDEX.md           # Single-page navigation hub
+│   ├── guides             # Wiring map, assembly, servo cal, UART protocol
+│   ├── checklists         # Race-day preflight & log
+│   ├── strategy           # Migration, rule compliance, audit, risk, templates
+│   ├── logs               # PID / maintenance / test CSV logs
+│   └── rules              # Official WRO 2026 rules (reference copies)
+├── t-photos               # Team presentation photos
+├── v-photos               # Vehicle engineering photos
+├── video                  # Demonstration recordings
+├── CHANGELOG.md           # Versioned engineering history
+└── README.md              # You are here
 ```
 
 ## ⚙️ How to Setup
@@ -60,6 +73,19 @@ Our software is divided into two continuous independent threads:
 4. Select challenge mode at compile time: `OBSTACLE_MODE 0` (Open) or `1` (Obstacle) in `src/esp32/wro_config_v13.h` (Rule 9.9: no physical mode switches). Place on the track, press the E-Stop button to start.
 
 > ℹ️ The hardware was on a v12 plan (ESP32-S3 + AS5048A SPI + TFMini-S UART) but the new sensors didn't arrive in time and the v11 TCA9548A mux burned out. **v13 is the actual fielded build:** new ESP32-S3 main controller + original v11 sensors (AS5600 + VL53L1X), with the address conflicts resolved via dual native I2C peripherals and runtime XSHUT-based VL53L1X address remapping. See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/strategy/WRO_Migration_v12_to_v13.md`](docs/strategy/WRO_Migration_v12_to_v13.md) for the full story.
+
+---
+
+## 📚 Reading Order (for judges and new readers)
+
+1. **This README** — you are here.
+2. **Engineering writeups by topic** — three short docs, one per WRO rubric area:
+   - [`other/mobility-management/`](other/mobility-management/) — drivetrain, steering, chassis, control loops
+   - [`other/power-and-sense-management/`](other/power-and-sense-management/) — battery, power, sensors
+   - [`other/obstacle-management/`](other/obstacle-management/) — Obstacle Challenge strategy + parking
+3. **Reference docs** — the [`docs/INDEX.md`](docs/INDEX.md) lists every document grouped by use-case (guides, checklists, strategy, logs, rules).
+4. **Source** — vision in [`src/openmv/`](src/openmv/), control in [`src/esp32/`](src/esp32/) (entry point [`wro_v13_main.cpp`](src/esp32/wro_v13_main.cpp), tunables in [`wro_config_v13.h`](src/esp32/wro_config_v13.h)).
+5. **Engineering history** — [`CHANGELOG.md`](CHANGELOG.md) tells the v11 → v12-plan → v13-actual story chronologically.
 
 ---
 
