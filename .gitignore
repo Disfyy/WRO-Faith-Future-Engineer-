@@ -21,3 +21,6 @@ __pycache__/
 # Local secrets / env files (none committed today, but defend the future)
 .env
 *.local
+
+# Claude Code worktrees / metadata
+.claude/
