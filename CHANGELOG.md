@@ -25,8 +25,8 @@ The v12 plan called for AS5048A SPI encoders + TFMini-S UART distance sensors. T
 | `src/esp32/scan_i2c_v13.cpp` | Two-bus I2C scanner |
 | `src/esp32/bench_test_v13.cpp` | Full bench test |
 | `src/esp32/test_vl53l1x.cpp` | VL53L1X distance test |
-| `docs/WRO_Wiring_Map_v13.md` | Complete v13 wiring reference |
-| `docs/WRO_Migration_v12_to_v13.md` | Step-by-step migration guide |
+| `docs/guides/WRO_Wiring_Map_v13.md` | Complete v13 wiring reference |
+| `docs/strategy/WRO_Migration_v12_to_v13.md` | Step-by-step migration guide |
 
 ### Removed files
 | File | Replacement |

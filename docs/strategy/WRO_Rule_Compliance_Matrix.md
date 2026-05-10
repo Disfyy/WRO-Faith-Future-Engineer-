@@ -26,7 +26,7 @@ Official source:
 
 | ID | Rule | Requirement summary | Implementation anchor | Verification anchor | Status |
 |----|------|---------------------|------------------------|---------------------|--------|
-| O-9.6 | WRO 9.6 | Vehicle must be placed in start zone switched off | `docs/WRO_Robot_Assembly_and_Startup_Guide.md` (Stage 11 + Stage 15 startup flow) | `docs/WRO_Track_Test_Cases.md` TC-07 | NEEDS PHYSICAL VERIFY |
+| O-9.6 | WRO 9.6 | Vehicle must be placed in start zone switched off | `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md` (Stage 11 + Stage 15 startup flow) | `docs/strategy/WRO_Track_Test_Cases.md` TC-07 | NEEDS PHYSICAL VERIFY |
 | O-9.9 | WRO 9.9 | No data entry via physical switch/config changes during round prep | `src/esp32/eps323.cpp:48` (`#define OBSTACLE_CHALLENGE_MODE` compile-time), `docs/WRO_Robot_Assembly_and_Startup_Guide.md:697` | Code review + TC-07 | PASS (design), NEEDS EVENT DISCIPLINE |
 | O-9.10 | WRO 9.10 | Only one switch allowed for power on | `docs/WRO_Robot_Assembly_and_Startup_Guide.md:178` (single KCD3 architecture) | Hardware inspection + TC-07 | NEEDS PHYSICAL VERIFY |
 | O-9.11 | WRO 9.11 | After power on vehicle must wait for one start button | `src/esp32/eps323.cpp:404` (`handleStartButton`), `src/esp32/eps323.cpp:366` (`checkEStop`) | TC-07 | NEEDS TRACK VERIFY |
@@ -46,9 +46,9 @@ Official source:
 | I-SAFE-ESTOP | E-Stop must force safe stop in all states | `src/esp32/eps323.cpp:349` (`safeStop`), `src/esp32/eps323.cpp:366` (`checkEStop`) | TC-02 | NEEDS TRACK VERIFY |
 | I-SAFE-CAM | Camera timeout warning + offline safe stop | `src/esp32/eps323.cpp:139`, `src/esp32/eps323.cpp:140`, `src/esp32/eps323.cpp:731`, `src/esp32/eps323.cpp:1153` | TC-03 | NEEDS TRACK VERIFY |
 | I-SAFE-ENC | Persistent encoder loss must trigger safe stop | `src/esp32/eps323.cpp` (`updateOdometry`, encoder fault path) | TC-04 | NEEDS TRACK VERIFY |
-| I-I2C-MAP | Dual-bus device map must match firmware (no TCA9548A in v13) | `docs/WRO_Robot_Assembly_and_Startup_Guide.md` Stage 6, `docs/WRO_Wiring_Map_v13.md` | `scan_i2c_v13.cpp` (target 2) + TC-01 | NEEDS PHYSICAL VERIFY |
+| I-I2C-MAP | Dual-bus device map must match firmware (no TCA9548A in v13) | `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md` Stage 6, `docs/guides/WRO_Wiring_Map_v13.md` | `scan_i2c_v13.cpp` (target 2) + TC-01 | NEEDS PHYSICAL VERIFY |
 | I-LAPS-3 | Target laps must be 3 in both modes | `src/esp32/eps323.cpp:160`, `src/esp32/eps323.cpp:640` | TC-05 / TC-08 | NEEDS TRACK VERIFY |
-| I-UART-V3 | OpenMV must send 6-field UART v3 frame with CRC | `docs/WRO_OpenMV_UART_Protocol.md`, `src/openmv/openmv_main.py` frame assembly | Serial parsing check + TC-03 | NEEDS TRACK VERIFY |
+| I-UART-V3 | OpenMV must send 6-field UART v3 frame with CRC | `docs/guides/WRO_OpenMV_UART_Protocol.md`, `src/openmv/openmv_main.py` frame assembly | Serial parsing check + TC-03 | NEEDS TRACK VERIFY |
 
 ---
 
@@ -59,4 +59,4 @@ Official source:
 3. Operational rules (`O-9.13`) require team discipline, not only firmware behavior.
 
 Recommended next action:
-- Execute `docs/WRO_Track_Test_Cases.md` TC-01..TC-08 and update statuses from `NEEDS ... VERIFY` to `PASS/FAIL` with evidence links to logs/videos.
+- Execute `docs/strategy/WRO_Track_Test_Cases.md` TC-01..TC-08 and update statuses from `NEEDS ... VERIFY` to `PASS/FAIL` with evidence links to logs/videos.

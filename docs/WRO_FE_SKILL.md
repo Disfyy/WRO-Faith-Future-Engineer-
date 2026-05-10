@@ -33,7 +33,7 @@ description: >
 | Steering | JX PDI-6221MG Digital Servo | Steering control |
 | Power | 2S/3S LiPo + 5V Step-Down | Power supply |
 
-> v12 was a planned migration to AS5048A SPI + TFMini-S UART; the parts didn't arrive. Meanwhile the v11 TCA9548A I2C mux burned out. v13 keeps the new ESP32-S3 main controller and reverts to the v11 sensor stack — collisions resolved by dual native I2C peripherals (one AS5600 per bus) and runtime XSHUT-based VL53L1X address remapping. See [`docs/WRO_Migration_v12_to_v13.md`](WRO_Migration_v12_to_v13.md).
+> v12 was a planned migration to AS5048A SPI + TFMini-S UART; the parts didn't arrive. Meanwhile the v11 TCA9548A I2C mux burned out. v13 keeps the new ESP32-S3 main controller and reverts to the v11 sensor stack — collisions resolved by dual native I2C peripherals (one AS5600 per bus) and runtime XSHUT-based VL53L1X address remapping. See [`docs/strategy/WRO_Migration_v12_to_v13.md`](strategy/WRO_Migration_v12_to_v13.md).
 
 ### ESP32-S3 Pin Map (v13)
 - **I2C0 (Wire), GPIO 8/9:** ICM-20948 (0x68) + AS5600 Left (0x36) + VL53L1X Front (0x29 → 0x30)
@@ -55,7 +55,7 @@ description: >
 ## Software Architecture
 
 ### Two independent threads:
-1. **Vision (OpenMV, MicroPython):** `src/openmv/` — Detects Orange/Blue lines (lap direction), Red/Green pillars, magenta parking blocks, black walls. Sends UART v3 frame: `RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n` at ~50 Hz with XOR checksum. Spec: `docs/WRO_OpenMV_UART_Protocol.md`.
+1. **Vision (OpenMV, MicroPython):** `src/openmv/` — Detects Orange/Blue lines (lap direction), Red/Green pillars, magenta parking blocks, black walls. Sends UART v3 frame: `RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n` at ~50 Hz with XOR checksum. Spec: `docs/guides/WRO_OpenMV_UART_Protocol.md`.
 2. **Control (ESP32-S3, C++):** `src/esp32/wro_v13_main.cpp` — modular, layered. Build target = `WRO_TARGET_V13_MAIN` (11) in `wro_build_target.h`.
 
 ### Layered Architecture (v13)
@@ -136,17 +136,31 @@ WRO_Project_Pack/
 ---
 
 ## Key Documents (in `docs/`)
+
+### `docs/guides/` — engineering reference
 - `WRO_Wiring_Map_v13.md` — full v13 pin reference (authoritative)
-- `WRO_Migration_v12_to_v13.md` — what changed and why
 - `WRO_OpenMV_UART_Protocol.md` — camera frame spec (v3)
 - `WRO_Robot_Assembly_and_Startup_Guide.md` — physical build (line refs may be v11; verify)
 - `WRO_Servo_Calibration_Guide.md` — servo tuning procedure
+
+### `docs/checklists/` — race-day operations
 - `WRO_Quick_Race_Checklist.md` — competition-day quick check
 - `WRO_Robot_Master_Checklist_2026-03-27.md` — full preflight (line refs v11; verify)
-- `WRO_PID_Tuning_Log.csv` / `WRO_Maintenance_Log.csv` / `WRO_Test_Log.csv`
+- `WRO_Preflight_Log.md` — fillable preflight log
+
+### `docs/strategy/` — analysis and planning
+- `WRO_Migration_v12_to_v13.md` — what changed and why
 - `WRO_Track_Test_Cases.md` — structured test scenarios
 - `WRO_Rule_Compliance_Matrix.md` — WRO rule compliance (line refs v11; needs re-audit)
+- `WRO_Characteristics_Audit_2026-04-09.md` — historical audit (v11 lines, stale)
 - `WRO_Risk_Register.md` — risk assessment
+- `WRO_Release_Notes_Template.md` / `WRO_Config_Template.h` — templates
+
+### `docs/logs/` — running CSV logs
+- `WRO_PID_Tuning_Log.csv` / `WRO_Maintenance_Log.csv` / `WRO_Test_Log.csv`
+
+### `docs/rules/` — reference
+- `WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.{md,pdf}`
 
 ---
 

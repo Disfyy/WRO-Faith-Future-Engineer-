@@ -5,8 +5,8 @@
 > This document covers building the robot **from unboxing to first run**. Every step has verification points (✅), photo cues 📸, and time estimates ⏱️. **Don't move on until the current step passes.**
 >
 > **v13 hardware (May 2026):** ESP32-S3-DevKitC-1 N8R8 main board + 2× AS5600 encoders on dual native I2C + 2× VL53L1X distance sensors with XSHUT-based runtime address remapping + ICM-20948 IMU + OpenMV H7 Plus camera + BTS7960 motor driver + JX PDI-6221MG servo. **No TCA9548A I2C multiplexer.** Authoritative references for v13:
-> - Pin map: [`docs/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md)
-> - v12 → v13 migration: [`docs/WRO_Migration_v12_to_v13.md`](WRO_Migration_v12_to_v13.md)
+> - Pin map: [`docs/guides/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md)
+> - v12 → v13 migration: [`docs/strategy/WRO_Migration_v12_to_v13.md`](../strategy/WRO_Migration_v12_to_v13.md)
 > - Active firmware: `src/esp32/wro_v13_main.cpp` (target 11)
 > - I2C scanner: `src/esp32/scan_i2c_v13.cpp` (target 2, scans both buses)
 

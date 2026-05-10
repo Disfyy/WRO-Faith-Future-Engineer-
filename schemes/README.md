@@ -26,4 +26,4 @@ The `.png` / `.svg` were generated from earlier-revision source files and have n
 
 ## Authoritative pin reference
 
-The full v13 pin map with notes lives at [`../docs/WRO_Wiring_Map_v13.md`](../docs/WRO_Wiring_Map_v13.md). The `.md` files in this folder summarize that reference visually.
+The full v13 pin map with notes lives at [`../docs/guides/WRO_Wiring_Map_v13.md`](../docs/guides/WRO_Wiring_Map_v13.md). The `.md` files in this folder summarize that reference visually.

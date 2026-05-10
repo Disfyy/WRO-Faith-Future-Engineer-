@@ -8,7 +8,7 @@ from pyb import UART, LED
 # ============================================================
 # Sends compact frame to ESP32-S3 over UART3 at 115200 8N1.
 #
-# Frame format (must match docs/WRO_OpenMV_UART_Protocol.md v3.1):
+# Frame format (must match docs/guides/WRO_OpenMV_UART_Protocol.md v3.1):
 #   RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n
 #
 # ModeFlag (bitwise):

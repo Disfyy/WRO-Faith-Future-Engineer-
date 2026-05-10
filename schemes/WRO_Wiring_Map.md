@@ -1,7 +1,7 @@
 # WRO Wiring Map (v13)
 
 > **Active hardware revision:** v13 (ESP32-S3 + 2× AS5600 dual-I2C + 2× VL53L1X XSHUT-remap).
-> The full pin reference is at [`docs/WRO_Wiring_Map_v13.md`](../docs/WRO_Wiring_Map_v13.md);
+> The full pin reference is at [`docs/guides/WRO_Wiring_Map_v13.md`](../docs/guides/WRO_Wiring_Map_v13.md);
 > this file is the short summary for at-a-glance lookup.
 
 ## ESP32-S3-DevKitC-1 (N8R8) Pin Map
@@ -58,4 +58,4 @@
 | I2C buses | 1 (with mux) | 1 | 2 (Wire + Wire1) |
 | Odometry | 277 ticks/cm | 1110 ticks/cm | 277 ticks/cm |
 
-For the migration step-by-step, see [`docs/WRO_Migration_v12_to_v13.md`](../docs/WRO_Migration_v12_to_v13.md).
+For the migration step-by-step, see [`docs/strategy/WRO_Migration_v12_to_v13.md`](../docs/strategy/WRO_Migration_v12_to_v13.md).

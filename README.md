@@ -54,12 +54,12 @@ Our software is divided into two continuous independent threads:
 
 ## ⚙️ How to Setup
 
-1. Assemble and wire the chassis according to [`docs/WRO_Wiring_Map_v13.md`](docs/WRO_Wiring_Map_v13.md).
+1. Assemble and wire the chassis according to [`docs/guides/WRO_Wiring_Map_v13.md`](docs/guides/WRO_Wiring_Map_v13.md).
 2. Connect OpenMV to the IDE, run Threshold Editor to configure your field lighting, and save `openmv_main.py` directly to the camera flash as `main.py`.
 3. In Arduino IDE, install `Adafruit ICM20948`, `ESP32Servo`, and `VL53L1X` (by Pololu). Open the `src/esp32/` folder as a sketch, set `WRO_ACTIVE_TARGET` in `wro_build_target.h` to `WRO_TARGET_V13_MAIN` (target 11) and flash. Entry point is `src/esp32/wro_v13_main.cpp`.
 4. Select challenge mode at compile time: `OBSTACLE_MODE 0` (Open) or `1` (Obstacle) in `src/esp32/wro_config_v13.h` (Rule 9.9: no physical mode switches). Place on the track, press the E-Stop button to start.
 
-> ℹ️ The hardware was on a v12 plan (ESP32-S3 + AS5048A SPI + TFMini-S UART) but the new sensors didn't arrive in time and the v11 TCA9548A mux burned out. **v13 is the actual fielded build:** new ESP32-S3 main controller + original v11 sensors (AS5600 + VL53L1X), with the address conflicts resolved via dual native I2C peripherals and runtime XSHUT-based VL53L1X address remapping. See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/WRO_Migration_v12_to_v13.md`](docs/WRO_Migration_v12_to_v13.md) for the full story.
+> ℹ️ The hardware was on a v12 plan (ESP32-S3 + AS5048A SPI + TFMini-S UART) but the new sensors didn't arrive in time and the v11 TCA9548A mux burned out. **v13 is the actual fielded build:** new ESP32-S3 main controller + original v11 sensors (AS5600 + VL53L1X), with the address conflicts resolved via dual native I2C peripherals and runtime XSHUT-based VL53L1X address remapping. See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/strategy/WRO_Migration_v12_to_v13.md`](docs/strategy/WRO_Migration_v12_to_v13.md) for the full story.
 
 ---
 

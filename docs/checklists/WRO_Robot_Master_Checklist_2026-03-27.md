@@ -17,9 +17,9 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 ## 2) Compliance references
 
 - Official rules: `docs/rules/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.pdf`
-- Rule mapping: `docs/WRO_Rule_Compliance_Matrix.md`
-- Characteristics audit: `docs/WRO_Characteristics_Audit_2026-04-09.md`
-- Main build / operation guide: `docs/WRO_Robot_Assembly_and_Startup_Guide.md`
+- Rule mapping: `docs/strategy/WRO_Rule_Compliance_Matrix.md`
+- Characteristics audit: `docs/strategy/WRO_Characteristics_Audit_2026-04-09.md`
+- Main build / operation guide: `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md`
 
 ---
 
@@ -142,7 +142,7 @@ If FAIL → fix immediately and rerun Step A.
    - **No `0x70`** — that would mean a TCA9548A is still on the bus (it shouldn't be in v13).
 3. Run target 8 (`test_encoders.cpp`): both AS5600s sweep 0–4095, ticks accumulate.
 4. Run target 9 (`test_vl53l1x.cpp`): both VL53L1X come up at remapped addresses (`0x30`, `0x31`) and report distances.
-5. If anything mismatches, stop and verify wiring against [`docs/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md).
+5. If anything mismatches, stop and verify wiring against [`docs/guides/WRO_Wiring_Map_v13.md`](../guides/WRO_Wiring_Map_v13.md).
 
 ### Step C — Main firmware check (v13)
 1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_V13_MAIN` (target 11) → upload `wro_v13_main.cpp`.
@@ -217,7 +217,7 @@ If FAIL → re-check servo center calibration and BTS7960 polarity.
 
 ## 10) Track testing plan (in order)
 
-Run in this sequence (see [`docs/WRO_Track_Test_Cases.md`](WRO_Track_Test_Cases.md)):
+Run in this sequence (see [`docs/strategy/WRO_Track_Test_Cases.md`](../strategy/WRO_Track_Test_Cases.md)):
 1. TC-01 Stand Safety
 2. TC-02 E-Stop Reaction
 3. TC-03 Camera Timeout Stop

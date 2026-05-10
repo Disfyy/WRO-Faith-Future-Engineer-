@@ -1,7 +1,7 @@
 # WRO Quick Race Checklist (v13)
 
 > Hardware: ESP32-S3 + 2× AS5600 (dual native I2C) + 2× VL53L1X (XSHUT addr-remap) + ICM-20948 IMU.
-> No I2C mux (TCA9548A removed). See [`WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md) for the full pin reference.
+> No I2C mux (TCA9548A removed). See [`WRO_Wiring_Map_v13.md`](../guides/WRO_Wiring_Map_v13.md) for the full pin reference.
 
 ## 1) Before Power ON
 - Battery charged and voltage checked

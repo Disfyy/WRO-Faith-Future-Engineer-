@@ -4,7 +4,7 @@
 
 - Execute test cases in order from TC-01 to TC-08.
 - If any safety-critical test fails, stop and fix before continuing.
-- Record every result in `docs/WRO_Test_Log.csv`.
+- Record every result in `docs/logs/WRO_Test_Log.csv`.
 
 ## TC-01 Stand Safety Test
 

@@ -7,7 +7,7 @@
  *   - 5 commas, 6 fields, 1-byte XOR checksum (hex, 2 chars after '*')
  *   - Frame rate ~50 Hz
  *
- * ModeFlag bits (per docs/WRO_OpenMV_UART_Protocol.md):
+ * ModeFlag bits (per docs/guides/WRO_OpenMV_UART_Protocol.md):
  *   bit0: orange line  (CW indicator)
  *   bit1: blue   line  (CCW indicator)
  *   bit2: magenta parking block visible
