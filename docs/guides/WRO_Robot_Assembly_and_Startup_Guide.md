@@ -316,7 +316,7 @@ Plus:
 
 ### 4.2. Center calibration
 
-Use the dedicated sketch [`sketches/servo_calibrate/servo_calibrate.ino`](../sketches/servo_calibrate/servo_calibrate.ino) — it walks you through fine-tuning center / left / right with `+` `-` keys and prints the values to paste into `wro_hw_config_v13.h`.
+Use the dedicated sketch [`sketches/servo_calibrate/servo_calibrate.ino`](../../sketches/servo_calibrate/servo_calibrate.ino) — it walks you through fine-tuning center / left / right with `+` `-` keys and prints the values to paste into `wro_hw_config_v13.h`.
 
 ### 4.3. Range test
 

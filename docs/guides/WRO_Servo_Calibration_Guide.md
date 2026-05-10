@@ -3,7 +3,7 @@
 **Servo:** JX PDI-6221MG
 **MCU:** ESP32-S3-DevKitC-1 N8R8 (v13)
 **Pin:** GPIO 42
-**Firmware:** [`sketches/servo_calibrate/servo_calibrate.ino`](../sketches/servo_calibrate/servo_calibrate.ino) — standalone Arduino IDE sketch already wired to GPIO 42 with v13 calibration constants.
+**Firmware:** [`sketches/servo_calibrate/servo_calibrate.ino`](../../sketches/servo_calibrate/servo_calibrate.ino) — standalone Arduino IDE sketch already wired to GPIO 42 with v13 calibration constants.
 
 > The legacy `src/esp32/legacy/legacy_test_servo_calibrate.cpp` (build target 7) was the v11 calibration program on GPIO 27 and is kept as historical reference only. For v13 use the standalone sketch above, which has the same workflow with v13 hardware bindings.
 
