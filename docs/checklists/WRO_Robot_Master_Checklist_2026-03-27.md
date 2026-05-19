@@ -101,10 +101,10 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 
 ### Active code files (v13)
 - `wro_v13_main.cpp` (main race firmware — target 11)
-- `scan_i2c_v13.cpp` (dual-bus diagnostic scanner — target 2)
-- `test_encoders.cpp` (AS5600 dual-I2C test — target 8)
-- `test_vl53l1x.cpp` (VL53L1X with XSHUT remap — target 9)
-- `bench_test_v13.cpp` (full bench — target 10)
+- `diag_scan_i2c_v13.cpp` (dual-bus diagnostic scanner — target 2)
+- `diag_test_encoders.cpp` (AS5600 dual-I2C test — target 8)
+- `diag_test_vl53l1x.cpp` (VL53L1X with XSHUT remap — target 9)
+- `diag_bench_test_v13.cpp` (full bench — target 10)
 - `src/esp32/legacy/legacy_eps323.cpp` and other `legacy_*.cpp` (v11 reference, archived, not active)
 
 ### Key protocol file
@@ -135,13 +135,13 @@ Use this checklist before every test and race run to confirm the robot is safe, 
 If FAIL → fix immediately and rerun Step A.
 
 ### Step B — Sensor bus check (v13)
-1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_SCAN_I2C` (target 2) → upload `scan_i2c_v13.cpp`.
+1. Set `WRO_ACTIVE_TARGET = WRO_TARGET_SCAN_I2C` (target 2) → upload `diag_scan_i2c_v13.cpp`.
 2. Confirm:
    - **I2C0:** `0x68` + `0x36` + `0x29`
    - **I2C1:** `0x36` + `0x29`
    - **No `0x70`** — that would mean a TCA9548A is still on the bus (it shouldn't be in v13).
-3. Run target 8 (`test_encoders.cpp`): both AS5600s sweep 0–4095, ticks accumulate.
-4. Run target 9 (`test_vl53l1x.cpp`): both VL53L1X come up at remapped addresses (`0x30`, `0x31`) and report distances.
+3. Run target 8 (`diag_test_encoders.cpp`): both AS5600s sweep 0–4095, ticks accumulate.
+4. Run target 9 (`diag_test_vl53l1x.cpp`): both VL53L1X come up at remapped addresses (`0x30`, `0x31`) and report distances.
 5. If anything mismatches, stop and verify wiring against [`docs/guides/WRO_Wiring_Map_v13.md`](../guides/WRO_Wiring_Map_v13.md).
 
 ### Step C — Main firmware check (v13)
@@ -234,7 +234,7 @@ Record per run: Kp/Kd, battery voltage, floor condition, laps completed, failure
 ## 11) Common failure modes + quick fixes
 
 ### Wrong devices on the I2C scan
-- Confirm you ran `scan_i2c_v13.cpp` (target 2), not the legacy v11/v12 versions
+- Confirm you ran `diag_scan_i2c_v13.cpp` (target 2), not the legacy v11/v12 versions
 - `0x70` showing up = stray TCA9548A still wired (shouldn't be in v13)
 - Missing `0x29` after boot = VL53L1X XSHUT pin not driven LOW correctly
 
@@ -252,7 +252,7 @@ Record per run: Kp/Kd, battery voltage, floor condition, laps completed, failure
 ### Encoder dropouts
 - Check AS5600 supply (3.3 V) and magnet alignment (1-2 mm gap, centered)
 - Check 4.7 kΩ pull-ups on the relevant I2C bus
-- Run `test_encoders.cpp` (target 8) to inspect raw data live
+- Run `diag_test_encoders.cpp` (target 8) to inspect raw data live
 
 ### VL53L1X stuck at default `0x29`
 - XSHUT pin floating or shorted — verify `vl53l1x_dual.h` boot order

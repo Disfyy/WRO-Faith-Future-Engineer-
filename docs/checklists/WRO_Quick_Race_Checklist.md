@@ -23,17 +23,17 @@
 - Status LED behavior normal (LED on after init complete)
 
 ## 3) Sensor Check (run each in turn before race)
-- Target 2 (`WRO_TARGET_SCAN_I2C` → `scan_i2c_v13.cpp`)
+- Target 2 (`WRO_TARGET_SCAN_I2C` → `diag_scan_i2c_v13.cpp`)
   - **I2C0** finds `0x68` (IMU) + `0x36` (AS5600 L) + `0x29` (VL53L1X F pre-remap)
   - **I2C1** finds `0x36` (AS5600 R) + `0x29` (VL53L1X S pre-remap)
   - **No `0x70`** (mux is gone). Anything unexpected → NO-GO.
-- Target 8 (`test_encoders.cpp`)
+- Target 8 (`diag_test_encoders.cpp`)
   - Both AS5600s read 0–4095, ticks accumulate when wheels spin
   - Magnet status `OK` for both
-- Target 9 (`test_vl53l1x.cpp`)
+- Target 9 (`diag_test_vl53l1x.cpp`)
   - Front and side report distances, no `9999` saturation under normal conditions
   - 5 V on VIN of each VL53L1X (NOT 3.3 V)
-- Target 10 (`bench_test_v13.cpp`)
+- Target 10 (`diag_bench_test_v13.cpp`)
   - All sensors + actuators + camera + E-Stop respond live (`s` then `e`)
 - Switch back to target 11 (`wro_v13_main.cpp`) for the race.
 

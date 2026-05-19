@@ -154,7 +154,7 @@ After calibration, update the µs constants in `src/esp32/wro_hw_config_v13.h` (
 **With microsecond constants from your calibration:**
 
 ```cpp
-// NEW — calibrated in µs (run sketches/servo_calibrate, or read from bench_test_v13 target 10)
+// NEW — calibrated in µs (run sketches/servo_calibrate, or read from diag_bench_test_v13 target 10)
 #define SERVO_CENTER_US    1485   // <- your measured value
 #define SERVO_RIGHT_US     1940   // <- your measured value
 #define SERVO_LEFT_US      1040   // <- your measured value

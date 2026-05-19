@@ -119,10 +119,10 @@ WRO_Project_Pack/
 │   │   ├── wro_build_target.h    # target selector
 │   │   ├── as5600_dual_i2c.h     # AS5600 dual-bus driver
 │   │   ├── vl53l1x_dual.h        # VL53L1X driver with XSHUT addr remap
-│   │   ├── bench_test_v13.cpp    # full bench (target 10)
-│   │   ├── test_encoders.cpp     # AS5600 dual-I2C test (target 8)
-│   │   ├── test_vl53l1x.cpp      # VL53L1X test (target 9)
-│   │   ├── scan_i2c_v13.cpp      # 2-bus I2C scanner (target 2)
+│   │   ├── diag_bench_test_v13.cpp  # full bench (target 10)
+│   │   ├── diag_test_encoders.cpp   # AS5600 dual-I2C test (target 8)
+│   │   ├── diag_test_vl53l1x.cpp    # VL53L1X test (target 9)
+│   │   ├── diag_scan_i2c_v13.cpp    # 2-bus I2C scanner (target 2)
 │   │   └── legacy/               # v11 archived sources (legacy_*.cpp + README)
 │   └── openmv/                   # MicroPython vision
 ├── schemes/                      # Wiring diagrams (v13)
