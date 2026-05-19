@@ -68,7 +68,11 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       g_park_steer_us  = (int)(SERVO_CENTER_US + HEADING_KP * herr);
       g_park_speed_pwm = PARK_APPROACH_PWM;
 
-      // Decide bay side from magenta X (negative = left, positive = right).
+      // Decide bay side from magenta X. `cam.extraTag` carries the magenta
+      // block's X-position in OpenMV image coordinates (-IMG_W/2..+IMG_W/2,
+      // center-relative; see openmv_main.py and docs/guides/WRO_OpenMV_UART_Protocol.md).
+      // Negative = block left of center → bay to the LEFT  (bayDir = -1).
+      // Positive = block right of center → bay to the RIGHT (bayDir = +1).
       if (magenta) bayDir = (cam.extraTag >= 0) ? +1 : -1;
 
       bool nearBackWall = (tf_front_ok && tf_front_mm > 0 && tf_front_mm < 250);

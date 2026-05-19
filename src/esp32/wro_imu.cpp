@@ -21,12 +21,12 @@ static unsigned long lastImuMs = 0;
 static int   failStreak   = 0;
 
 bool imu_init() {
-  // I2C0 (Wire) is shared with AS5600 Left + VL53L1X Front; the AS5600/VL53L1X
-  // drivers also call Wire.begin(I2C0_SDA, I2C0_SCL) — ESP-IDF tolerates
-  // repeated begin() so the order doesn't matter, but keeping a single
-  // setClock here ensures every device runs at I2C_FREQ_HZ.
-  Wire.begin(I2C0_SDA, I2C0_SCL);
-  Wire.setClock(I2C_FREQ_HZ);
+  // I2C0 (Wire) is shared with AS5600 Left + VL53L1X Front. Bus init lives in
+  // as5600_init() (called from odo_init() earlier in setup()): it does
+  // Wire.begin(I2C0_SDA, I2C0_SCL) + Wire.setClock(I2C_FREQ_HZ) before any
+  // other I2C0 device touches the bus. Don't duplicate that here — if init
+  // order ever changes, fix it at the call site, not by re-init'ing the bus
+  // from every driver.
   if (!icm.begin_I2C(ICM20948_ADDRESS)) {
     g_imu_ok = false;
     return false;

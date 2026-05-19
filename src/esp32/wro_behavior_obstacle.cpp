@@ -6,6 +6,9 @@
 #include "wro_pid.h"
 #include "wro_behavior_obstacle.h"
 
+static_assert(PILLAR_BLEND_OUT_MS > 0,
+              "PILLAR_BLEND_OUT_MS must be > 0 (divisor in obstacle blend).");
+
 int g_obs_steer_us       = SERVO_CENTER_US;
 int g_obs_speed_pwm      = OBS_MAX_PWM;
 int g_obs_active_pillar  = 0;
@@ -99,7 +102,7 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
 
     float herr = wrap180(headingTarget - yaw_deg);
     float hu   = pid_step(pidHeading, herr, dt);
-    u = (1.0f - blend) * 0.0f + blend * hu;
+    u = blend * hu;   // blend toward heading-hold; pre-blend baseline is 0
   }
 
   if (u >  PILLAR_OUTPUT_CLAMP_US) u =  PILLAR_OUTPUT_CLAMP_US;

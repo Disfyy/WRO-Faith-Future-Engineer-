@@ -296,16 +296,33 @@ void race_update() {
     case RS_SAFE_STOP:
       g_cmd_steer_us  = SERVO_CENTER_US;
       g_cmd_speed_pwm = 0;
-      // Resume on release, only if previous state was running.
+      // Resume on release. Recovery rules:
+      //   - From a running state (RS_RUN_*/RS_PARKING) → resume that state.
+      //   - From RS_TURN (reserved; not entered today) → resume the race mode
+      //     that was actually selected, not a hardcoded RS_RUN_OPEN.
+      //   - From RS_INIT/RS_WAIT_START → drop back to RS_WAIT_START so an
+      //     operator who hit E-Stop before pressing start isn't trapped in
+      //     SAFE_STOP requiring a power cycle.
       if (estop_released_after_held()) {
         estop_consume_release();
-        if (prevRaceState == RS_RUN_OPEN || prevRaceState == RS_RUN_OBS ||
-            prevRaceState == RS_TURN     || prevRaceState == RS_PARKING) {
+        int resumeTo = prevRaceState;
+        if (resumeTo == RS_TURN) {
+#if OBSTACLE_MODE == 1
+          resumeTo = RS_RUN_OBS;
+#else
+          resumeTo = RS_RUN_OPEN;
+#endif
+        }
+        if (resumeTo == RS_INIT || resumeTo == RS_WAIT_START) {
+          enterState(RS_WAIT_START);
+        } else if (resumeTo == RS_RUN_OPEN || resumeTo == RS_RUN_OBS ||
+                   resumeTo == RS_PARKING) {
           corner_reset();
           open_reset();
           obs_reset();
-          enterState(prevRaceState == RS_TURN ? RS_RUN_OPEN : prevRaceState);
+          enterState(resumeTo);
         }
+        // else: unknown prev state → remain in RS_SAFE_STOP (defensive).
       }
       break;
   }
