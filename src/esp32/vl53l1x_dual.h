@@ -67,7 +67,7 @@ static bool vl53_boot_one(VL53L1Sensor &s, TwoWire &bus,
   s.bus        = &bus;
   s.xshutPin   = xshut;
   s.targetAddr = targetAddr;
-  s.distMM     = 9999;
+  s.distMM     = TOF_INVALID_MM;
   s.distCM     = -1;
   s.strength   = 0;
   s.ok         = false;
@@ -112,11 +112,18 @@ static inline void vl53_initAll() {
     tfSide.ok = false;
   }
 
+  // Dual-fail is silent-deadly: if BOTH front and side fail, the corner FSM
+  // never sees a wall and the robot drives straight forever. Make that loud.
+  if (!tfFront.ok && !tfSide.ok) {
+    Serial.println("WARN: BOTH VL53L1X sensors failed boot");
+    Serial.println("WARN: corner FSM will never trigger - check XSHUT wiring, I2C pull-ups, 2.8V rails");
+  }
+
   // Third sensor reserved — left disabled by default. Set its XSHUT low here
   // so noise on a floating pin can't accidentally power it onto the bus.
   digitalWrite(VL53L1X_THIRD_XSHUT, LOW);
   tfThird.ok     = false;
-  tfThird.distMM = 9999;
+  tfThird.distMM = TOF_INVALID_MM;
 }
 
 // ─── Non-blocking poll on one sensor ──────────────────────────
@@ -126,11 +133,11 @@ static inline void vl53_read_one(VL53L1Sensor &s) {
 
   uint16_t mm = s.sensor.read(false);            // false = don't block
   if (s.sensor.timeoutOccurred()) {
-    s.distMM = 9999;
+    s.distMM = TOF_INVALID_MM;
     return;
   }
   if (mm == 0 || mm > TOF_MAX_VALID_MM) {
-    s.distMM = 9999;
+    s.distMM = TOF_INVALID_MM;
     return;
   }
   s.distMM   = mm;

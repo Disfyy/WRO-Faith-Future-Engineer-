@@ -53,7 +53,7 @@ void open_update(float yaw_deg, int side_tof_mm) {
   // -1 if mounted on the left. Combined with trackDirection, this keeps the
   // same physical sensor pulling the robot back toward its target wall in
   // both CW and CCW races without re-tuning WALL_KP.
-  if (side_tof_mm > 0 && side_tof_mm < 9999) {
+  if (side_tof_mm > 0 && side_tof_mm < TOF_INVALID_MM) {
     float wallErr = (float)(side_tof_mm - WALL_TARGET_MM);
     u += (float)(trackDirection * WALL_TOF_SIDE) * WALL_KP * wallErr;
   }
