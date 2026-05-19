@@ -123,6 +123,7 @@
 #define TOF_SIDE_TARGET_MM  100
 #define TOF_PARALLEL_TOL_MM 20
 #define TOF_MAX_VALID_MM    3500     // reject reads above this (out-of-range)
+#define TOF_INVALID_MM      9999     // sentinel for "no valid VL53L1X reading"
 
 // ============================================================
 // 11.  Race & PID defaults

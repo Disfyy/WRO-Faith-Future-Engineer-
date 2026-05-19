@@ -43,9 +43,19 @@ sensor.set_auto_whitebal(False)
 sensor.set_auto_exposure(False, exposure_us=10000)
 
 # --- UART -----------------------------------------------------
-uart = UART(3, 115200, timeout_char=1000)
+# UART(3) is the H7 Plus's hardware UART exposed on the camera-facing
+# connector. If it can't be constructed (wrong port number on a different
+# OpenMV board, peripheral busy, etc.) we'd otherwise hang silently with no
+# packets reaching the ESP32 and no visible reason. Blink the red LED fast
+# instead so the failure is obvious on the field.
 led_red   = LED(1)
 led_green = LED(2)
+try:
+    uart = UART(3, 115200, timeout_char=1000)
+except Exception:
+    while True:
+        led_red.on();  time.sleep_ms(150)
+        led_red.off(); time.sleep_ms(150)
 
 # --- Image geometry ------------------------------------------
 IMG_W    = 160

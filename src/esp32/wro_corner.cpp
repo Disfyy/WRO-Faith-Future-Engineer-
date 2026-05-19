@@ -17,7 +17,7 @@ static unsigned long stateEnteredMs     = 0;
 static unsigned long lockoutUntilMs     = 0;
 static int           validFrameStreak   = 0;        // for COMMIT debounce
 static float         turnStartYaw       = 0.0f;
-static int           lastTfMm           = 9999;
+static int           lastTfMm           = TOF_INVALID_MM;
 
 static inline void enter(CornerState s, unsigned long now) {
   g_corner_state    = s;
@@ -41,7 +41,7 @@ bool corner_failed()  { return g_corner_state == CN_FAIL; }
 void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned long now) {
   // Frames where the front sensor is unreliable can NOT trigger a turn.
   // (tf_front_mm comes from wro_sensors which now wraps VL53L1X in v13.)
-  bool framePresent = tf_front_ok && tf_front_mm > 0 && tf_front_mm < 9999;
+  bool framePresent = tf_front_ok && tf_front_mm > 0 && tf_front_mm < TOF_INVALID_MM;
   if (framePresent) lastTfMm = tf_front_mm;
 
   switch (g_corner_state) {
