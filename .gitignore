@@ -22,5 +22,6 @@ __pycache__/
 .env
 *.local
 
-# Claude Code worktrees / metadata
-.claude/
+# Claude Code worktrees / metadata (but keep project-scoped agents)
+.claude/*
+!.claude/agents/
