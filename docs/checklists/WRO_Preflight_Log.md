@@ -15,25 +15,25 @@
 - [ ] Wheels / steering move freely
 - [ ] VL53L1X sensors powered from 5 V (VIN), not 3.3 V
 
-## I2C Scanner Check (`scan_i2c_v13.cpp`, target 2)
+## I2C Scanner Check (`diag_scan_i2c_v13.cpp`, target 2)
 Both buses scanned. Pre-VL53L1X-remap, expected addresses are:
 - [ ] **I2C0 (Wire)**: `0x68` (IMU) + `0x36` (AS5600 Left) + `0x29` (VL53L1X Front)
 - [ ] **I2C1 (Wire1)**: `0x36` (AS5600 Right) + `0x29` (VL53L1X Side)
 - [ ] **No `0x70`** (TCA9548A is gone in v13)
 
-## Encoder Check (`test_encoders.cpp`, target 8)
+## Encoder Check (`diag_test_encoders.cpp`, target 8)
 - [ ] AS5600 Left (I2C0) raw 0–4095, ticks accumulate when wheel turns
 - [ ] AS5600 Right (I2C1) raw 0–4095, ticks accumulate when wheel turns
 - [ ] No `-1` returns from `as5600_read()`
 - [ ] Magnet status reports `OK` for both encoders
 
-## VL53L1X Check (`test_vl53l1x.cpp`, target 9)
+## VL53L1X Check (`diag_test_vl53l1x.cpp`, target 9)
 - [ ] Front and side sensors come up at remapped addresses (0x30, 0x31)
 - [ ] Distances change smoothly when a hand is moved 10–100 cm in front
 - [ ] No `9999` saturation reads at normal distances
 - [ ] XSHUT pins driven HIGH after boot dance completes
 
-## Bench Test (`bench_test_v13.cpp`, target 10)
+## Bench Test (`diag_bench_test_v13.cpp`, target 10)
 - [ ] IMU yaw responds to chassis rotation by hand
 - [ ] Servo sweeps left/center/right cleanly via `sl`/`sc`/`sr`
 - [ ] Motor PWM ramps forward and reverse via `f`/`b` (wheels off the ground!)

@@ -85,12 +85,12 @@ The estimation/behavior/FSM modules (`wro_imu`, `wro_odometry`, `wro_camera`, `w
 
 ## Step 4 — Verification order
 
-1. `WRO_ACTIVE_TARGET = 2` → `scan_i2c_v13.cpp` → expect:
+1. `WRO_ACTIVE_TARGET = 2` → `diag_scan_i2c_v13.cpp` → expect:
    - I2C0: 0x68 (IMU), 0x36 (AS5600 L), 0x29 (VL53L1X F before remap)
    - I2C1: 0x36 (AS5600 R), 0x29 (VL53L1X S before remap)
-2. `WRO_ACTIVE_TARGET = 8` → `test_encoders.cpp` → spin wheels, both encoders accumulate ticks (4096/rev, 277 ticks/cm)
-3. `WRO_ACTIVE_TARGET = 9` → `test_vl53l1x.cpp` → both sensors come up at remapped addresses, return real distances
-4. `WRO_ACTIVE_TARGET = 10` → `bench_test_v13.cpp` → all sensors + actuators + camera + E-Stop
+2. `WRO_ACTIVE_TARGET = 8` → `diag_test_encoders.cpp` → spin wheels, both encoders accumulate ticks (4096/rev, 277 ticks/cm)
+3. `WRO_ACTIVE_TARGET = 9` → `diag_test_vl53l1x.cpp` → both sensors come up at remapped addresses, return real distances
+4. `WRO_ACTIVE_TARGET = 10` → `diag_bench_test_v13.cpp` → all sensors + actuators + camera + E-Stop
 5. `WRO_ACTIVE_TARGET = 11` → `wro_v13_main.cpp` → wheels-up smoke test, then floor
 
 ---

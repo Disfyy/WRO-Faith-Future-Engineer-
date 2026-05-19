@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## Unreleased — Repo signposting + diagnostic rename
+
+### Added
+- README in `src/esp32/`, `src/openmv/`, `sketches/`, `v-photos/`, `t-photos/`, `video/` so a first-time visitor can orient themselves without reading source.
+- "For first-time viewers / WRO judges" and "Testing & Calibration Workflow" sections in root `README.md`.
+
+### Renamed
+4 v13 diagnostic source files prefixed with `diag_` so they sort together in the Arduino IDE file list and are visually distinct from production firmware. The build-target macros (`WRO_TARGET_SCAN_I2C` = 2, `WRO_TARGET_TEST_ENCODERS` = 8, `WRO_TARGET_TEST_VL53L1X` = 9, `WRO_TARGET_BENCH_TEST` = 10) are unchanged.
+
+| Old path | New path |
+|---|---|
+| `src/esp32/scan_i2c_v13.cpp` | `src/esp32/diag_scan_i2c_v13.cpp` |
+| `src/esp32/test_encoders.cpp` | `src/esp32/diag_test_encoders.cpp` |
+| `src/esp32/test_vl53l1x.cpp` | `src/esp32/diag_test_vl53l1x.cpp` |
+| `src/esp32/bench_test_v13.cpp` | `src/esp32/diag_bench_test_v13.cpp` |
+
+> Why not move into `src/esp32/diagnostics/`? Arduino IDE doesn't recurse into subfolders (same reason `legacy/` is documented as not auto-compiled in [`src/esp32/legacy/README.md`](src/esp32/legacy/README.md)). A folder move would break the documented preflight workflow.
+
+### Updated
+- `src/esp32/esp32.ino`, `wro_build_target.h` — comment-only target tables now reference `diag_*.cpp` filenames.
+- `docs/README.md`, `docs/WRO_FE_SKILL.md`, all of `docs/checklists/`, `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md`, `docs/guides/WRO_Servo_Calibration_Guide.md`, `docs/strategy/WRO_Migration_v12_to_v13.md`, `docs/strategy/WRO_Rule_Compliance_Matrix.md`, `.claude/agents/wro-preflight.md` — diagnostic paths updated to `diag_*.cpp`.
+- `schemes/WRO_Full_System_Diagram.png` / `.svg` — regenerated from current v13 `.mmd` source (was last rendered against v12 hardware).
+
+---
+
 ## v13.0 — Sensor revert + dual-I2C (May 2026)
 
 ### Why
@@ -68,7 +93,7 @@ The v12 plan called for AS5048A SPI encoders + TFMini-S UART distance sensors. T
 ### TODO before competition
 - [ ] Bench-test the AS5600 + VL53L1X stack on the actual chassis once parts are mounted
 - [ ] Re-measure servo end-stops with target 7 (still pending v13 port; can read µs from target 10 bench output)
-- [ ] Re-render `schemes/WRO_Full_System_Diagram.png` / `.svg` from the v13 `.mmd` source
+- [x] Re-render `schemes/WRO_Full_System_Diagram.png` / `.svg` from the v13 `.mmd` source ✓ (Unreleased section above)
 - [ ] Compete
 
 ---

@@ -8,7 +8,7 @@
 > - Pin map: [`docs/guides/WRO_Wiring_Map_v13.md`](WRO_Wiring_Map_v13.md)
 > - v12 → v13 migration: [`docs/strategy/WRO_Migration_v12_to_v13.md`](../strategy/WRO_Migration_v12_to_v13.md)
 > - Active firmware: `src/esp32/wro_v13_main.cpp` (target 11)
-> - I2C scanner: `src/esp32/scan_i2c_v13.cpp` (target 2, scans both buses)
+> - I2C scanner: `src/esp32/diag_scan_i2c_v13.cpp` (target 2, scans both buses)
 
 ---
 
