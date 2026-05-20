@@ -135,9 +135,42 @@ this often improves data quality more than fixing the bracket.
 
 ---
 
+## Stability features (v1.1) — what makes this bracket actually rigid
+
+A cantilever — even with one gusset — flexes under vibration. To stop the
+shake we converted the cantilever into a **triangulated truss**. Four things
+work together:
+
+1. **Diagonal strut** (`STRUT_ENABLE=true` by default). Runs from the top of
+   the sensor mount down to the bottom of the riser, in the same plane as
+   the arm. The cantilever bending load on the sensor end becomes axial
+   tension/compression in the strut — that's ~50× more efficient than
+   bending a flat plate. **Single biggest rigidity improvement.**
+2. **Deeper lateral arm** (`ARM_H=10`, was `BRACKET_T=4`). Bending stiffness
+   scales with depth³ — going from 4 mm to 10 mm gives ~16× more rigidity
+   for the same arm length.
+3. **Double gussets** (`DOUBLE_GUSSET=true` by default). Triangular fillets
+   on BOTH sides of the riser-to-arm corner — above the arm and below it.
+   Together they make the corner rigid in torsion as well as bending.
+4. **Back buttresses** (`BACK_BUTTRESS=true` by default). Small wedges that
+   anchor the top and bottom edges of the sensor wall back to the lateral
+   arm. The wall is taller than the arm by ~7 mm on each side; without
+   buttresses those extensions would flap. With them, the wall is rigid.
+
+If you find the bracket prints too bulky or interferes with something on
+your specific car, you can disable individual features by editing the top
+of `AS5600_bracket.scad` and setting `STRUT_ENABLE=false` etc. But the
+default settings are what fixes the shake.
+
+---
+
 ## Step 4 — Print or fabricate the bracket
 
 ### Option A — 3D print (recommended)
+
+A pre-rendered `AS5600_bracket.stl` is already in this folder, sized for
+the default measurements. If your car matches the defaults you can slice
+this directly. Otherwise:
 
 1. Open `AS5600_bracket.scad` in OpenSCAD
 2. Verify `ARM_REACH`, `ARM_RISE`, `PCB_HOLE_SPACING` match your measurements

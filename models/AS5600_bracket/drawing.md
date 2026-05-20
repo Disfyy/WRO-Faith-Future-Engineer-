@@ -4,6 +4,15 @@ For teams without a 3D printer. Cut from **2mm aluminum sheet** (preferred) or *
 
 All dimensions in **millimetres**. Tolerance: ±0.2mm on hole positions, ±0.5mm on outline.
 
+> **Rigidity note:** The 3D-printed `AS5600_bracket.stl` version includes an
+> integrated diagonal strut + gussets + buttresses that triangulate the
+> structure. This hand-cut version does **not** include the strut — adding
+> a folded-sheet diagonal would require complex joinery. To match the 3D
+> version's rigidity, cut and rivet a **separate diagonal strap** (Section 4
+> below) running from the top of the sensor mount back to the chassis. With
+> the diagonal strap the hand-cut version equals the 3D version. Without
+> it, expect ~3–5× more deflection under load.
+
 ---
 
 ## 1. Flat blank — cut this shape, then bend at the fold lines
@@ -89,6 +98,45 @@ A second gusset at Fold 2 corner is recommended but optional (less critical beca
 
 ---
 
+## 2a. Diagonal strap — the truss element (CRITICAL for rigidity)
+
+This is what the 3D version calls the "diagonal strut". For the hand-cut
+version, add it as a separate folded strip riveted in place.
+
+```
+   STRAP — 50 × 6 mm strip, 1.5 mm bend at each end
+
+   <---------- 50 mm ----------->
+   +-----+--------------------+-----+
+   |  o  |                    |  o  |   <-- Ø2.4 mm M2 holes 4 mm in
+   +-----+--------------------+-----+
+       ↑                          ↑
+     bend 90° here              bend 90° here
+     (so this 5mm flap          (so this 5mm flap
+      bolts to sensor mount      bolts to anchor flange
+      Region C)                  Region A)
+```
+
+Cut from the same 2mm aluminium sheet (or 1.5mm steel if you have it —
+even better in tension).
+
+Bend the two end flaps 90° in the same direction (forming a shallow "[ ").
+Bolt one end to **Region A** (anchor flange, near the bottom-front edge)
+using an M2 screw + nut, with a new Ø2.4mm hole drilled in Region A
+**below** the lower M3 anchor hole. Bolt the other end to **Region C**
+(sensor mount, near the upper edge above the chip window) using another
+M2 screw + nut.
+
+The strap runs diagonally through open air between anchor and sensor
+mount, on the chassis-side of the wheel. It must NOT touch the wheel or
+suspension arm — eyeball clearance after install.
+
+Pre-bend test: with the strap in place, push laterally on the sensor
+mount with your finger. Deflection should drop by a factor of 3 or more
+versus without the strap.
+
+---
+
 ## 3. Assembly cross-section (side view, on the car)
 
 ```
@@ -123,6 +171,9 @@ A second gusset at Fold 2 corner is recommended but optional (less critical beca
 | 6 | M2 washers | 4 | Spread load on the slotted holes |
 | 7 | Small gusset triangle (same material) | 1 | 14×14 mm — see Section 2 |
 | 8 | M2 × 4 mm screws (for gusset) | 2 | Or rivets |
+| 9 | Diagonal strap, 50×6 mm | 1 | Same material as bracket — see Section 2a |
+| 10 | M2 × 6 mm screws (for strap ends) | 2 | One into anchor, one into sensor mount |
+| 11 | M2 nuts (for strap) | 2 | On the back side |
 
 ---
 
