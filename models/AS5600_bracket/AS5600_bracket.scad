@@ -56,9 +56,33 @@ ANCHOR_T          = 4;        // anchor flange thickness
 // Main bracket plate thickness — DO NOT go below 3mm
 BRACKET_T         = 4;
 
+// Lateral arm vertical depth (Z height). Bending stiffness ~ depth^3, so
+// going from 4mm to 10mm gives ~16x more rigidity. Don't make taller than
+// the gap between top deck and suspension top — measure first.
+ARM_H             = 10;
+
 // Triangular gusset depth (kills first-mode resonance)
 GUSSET_DEPTH      = 14;
 GUSSET_T          = 3;
+
+/* [Stability enhancements (v1.1 — convert cantilever into a truss)] */
+
+// Diagonal strut from sensor mount back down to the anchor.
+// This is the single biggest rigidity improvement — turns a flexing
+// cantilever into a rigid triangle. Enable unless it interferes with
+// something on your specific car.
+STRUT_ENABLE      = true;
+STRUT_W           = 4;        // strut width (X — along car length)
+STRUT_T           = 3;        // strut thickness (perpendicular to strut axis)
+
+// Mirror gusset on the OPPOSITE side of the anchor-to-riser corner.
+// With gussets on both sides the riser becomes truly rigid in torsion.
+DOUBLE_GUSSET     = true;
+
+// Back-buttress on the sensor mount — small horizontal rib that prevents
+// the sensor wall from rocking under cable pull or shake.
+BACK_BUTTRESS     = true;
+BUTTRESS_DEPTH    = 8;
 
 /* [Hole sizes — slight clearance over nominal] */
 M2_HOLE           = 2.4;      // tight clearance for M2 screw
@@ -109,38 +133,68 @@ module anchor_flange() {
 
 // ============================================================================
 //  CANTILEVER ARM — rises from anchor top to axle height, then turns laterally
+//  Lateral arm uses ARM_H for vertical depth (bending stiffness scales with
+//  depth cubed — 4mm -> 10mm is ~16x stiffer).
 // ============================================================================
 module cantilever_arm() {
     // Vertical section (anchor top to axle height)
     translate([-BRACKET_T/2, ANCHOR_T, -ANCHOR_H/2])
-        cube([BRACKET_T, BRACKET_T, ARM_RISE + ANCHOR_H/2 + BRACKET_T/2]);
+        cube([BRACKET_T, BRACKET_T, ARM_RISE + ANCHOR_H/2 + ARM_H/2]);
 
-    // Horizontal section (axle height extending laterally to wheel face)
-    // Width tapers from full at the corner to reduced at the end
+    // Horizontal section (deep section in Z for bending rigidity)
     hull() {
-        translate([-BRACKET_T/2, ANCHOR_T, ARM_RISE - BRACKET_T/2])
-            cube([BRACKET_T, BRACKET_T, BRACKET_T]);
+        translate([-BRACKET_T/2, ANCHOR_T, ARM_RISE - ARM_H/2])
+            cube([BRACKET_T, BRACKET_T, ARM_H]);
         translate([-BRACKET_T/2, ANCHOR_T + ARM_REACH - SENSOR_TO_WALL - BRACKET_T,
-                   ARM_RISE - BRACKET_T/2])
-            cube([BRACKET_T, BRACKET_T, BRACKET_T]);
+                   ARM_RISE - ARM_H/2])
+            cube([BRACKET_T, BRACKET_T, ARM_H]);
     }
 }
 
 // ============================================================================
-//  GUSSET — triangulated reinforcement between anchor and arm
-//  This is the single most important detail for stopping shake.
+//  GUSSET — triangulated reinforcement between anchor and arm.
+//  With DOUBLE_GUSSET=true a mirror copy on the opposite X side makes the
+//  riser rigid in torsion (not just bending).
 // ============================================================================
-module gusset() {
-    // Triangular gusset on the back side of the anchor/vertical-arm joint
-    translate([-GUSSET_T/2, ANCHOR_T, -ANCHOR_H/2 + 1])
-        rotate([0, 0, 0])
-        linear_extrude(height = ARM_RISE + ANCHOR_H/2 - 2)
-        polygon(points=[[0,0],[GUSSET_T, 0],[GUSSET_T, GUSSET_DEPTH]]);
+// One vertical YZ-plane gusset (triangular fillet) placed at the inside
+// corner where the lateral arm meets the riser. Polygon uses
+// (-Z_global, Y_global) so rotate([0,90,0]) makes it a vertical plate
+// extruded along X.
+module gusset_yz(z_corner, y_corner, y_far, z_far, thickness) {
+    translate([-thickness/2, 0, 0])
+        rotate([0, 90, 0])
+        linear_extrude(height = thickness)
+        polygon(points=[
+            [-z_corner, y_corner],      // right-angle vertex (inside corner)
+            [-z_far,    y_corner],      // along riser (vertical leg)
+            [-z_corner, y_far]          // along arm (horizontal leg)
+        ]);
+}
 
-    // Second gusset on the lateral corner (top of vertical, start of horizontal)
-    translate([-GUSSET_T/2, ANCHOR_T, ARM_RISE - BRACKET_T/2])
-        linear_extrude(height = BRACKET_T)
-        polygon(points=[[0,0],[GUSSET_DEPTH, 0],[0, GUSSET_DEPTH]]);
+module gusset() {
+    // Lower fillet — below the arm, supporting the bottom of the riser-to-arm
+    // corner. Right angle at the inside corner (front of riser, bottom of arm).
+    riser_front = ANCHOR_T + BRACKET_T - 0.5;       // 0.5mm into riser for merge
+    arm_bot     = ARM_RISE - ARM_H/2;
+    gusset_yz(
+        z_corner = arm_bot,
+        y_corner = riser_front,
+        y_far    = riser_front + GUSSET_DEPTH,
+        z_far    = arm_bot - GUSSET_DEPTH,
+        thickness= GUSSET_T
+    );
+
+    if (DOUBLE_GUSSET) {
+        // Upper fillet — above the arm, mirror of the lower one
+        arm_top = ARM_RISE + ARM_H/2;
+        gusset_yz(
+            z_corner = arm_top,
+            y_corner = riser_front,
+            y_far    = riser_front + GUSSET_DEPTH,
+            z_far    = arm_top + GUSSET_DEPTH,
+            thickness= GUSSET_T
+        );
+    }
 }
 
 // ============================================================================
@@ -179,6 +233,61 @@ module sensor_mount() {
 }
 
 // ============================================================================
+//  DIAGONAL STRUT — converts the cantilever into a triangulated truss.
+//  Goes from the top of the sensor mount BACK and DOWN to the bottom of the
+//  anchor flange, in the same XZ plane as the main arm. The free-cantilever
+//  bending load on the sensor mount becomes axial tension in the strut,
+//  which any decent material handles ~50x more efficiently than bending.
+// ============================================================================
+module diagonal_strut() {
+    // Top end embeds in the sensor wall; bottom end embeds in the RISER (not
+    // the anchor face). Routing through the riser keeps the M3 screw holes
+    // clear and avoids an ugly 1mm protrusion behind the anchor.
+    mount_x      = ANCHOR_T + ARM_REACH - SENSOR_TO_WALL;
+    sensor_top_z = ARM_RISE + PCB_H/2;             // near top of PCB area
+    riser_bot_z  = -ANCHOR_H/2 + STRUT_T/2 + 2;    // 2mm above anchor bottom
+
+    hull() {
+        // Top end — passes all the way through the sensor wall
+        translate([-STRUT_W/2, mount_x - BRACKET_T - 1, sensor_top_z - STRUT_T/2])
+            cube([STRUT_W, BRACKET_T + 2, STRUT_T]);
+        // Bottom end — passes all the way through the riser (Y = ANCHOR_T..ANCHOR_T+BRACKET_T)
+        translate([-STRUT_W/2, ANCHOR_T - 1, riser_bot_z - STRUT_T/2])
+            cube([STRUT_W, BRACKET_T + 2, STRUT_T]);
+    }
+}
+
+// ============================================================================
+//  BACK BUTTRESSES — small triangular gussets that fill the upper and lower
+//  corners where the wall meets the arm. The wall sticks above and below the
+//  arm by ~7 mm on each side (because PCB_H > ARM_H), and those free
+//  extensions flex under cable pull or vibration. Buttresses anchor them.
+// ============================================================================
+module back_buttress_one(z_arm, z_wall) {
+    // Triangle in YZ plane, thickness BRACKET_T in X.
+    // Polygon defined in local (X, Y) where local X = -Z_global and local Y = Y_global,
+    // then linear_extrude along local Z, then rotate so local Z aligns with global X.
+    mount_y = ANCHOR_T + ARM_REACH - SENSOR_TO_WALL - BRACKET_T;
+    translate([-BRACKET_T/2, 0, 0])
+        rotate([0, 90, 0])
+        linear_extrude(height = BRACKET_T)
+        polygon(points=[
+            [-z_arm,  mount_y],                   // arm bottom/top at wall (right angle)
+            [-z_wall, mount_y],                   // wall edge (along wall back)
+            [-z_arm,  mount_y - BUTTRESS_DEPTH]   // along arm bottom/top
+        ]);
+}
+
+module back_buttress() {
+    arm_bot  = ARM_RISE - ARM_H/2;
+    arm_top  = ARM_RISE + ARM_H/2;
+    wall_bot = ARM_RISE - (PCB_H + 6)/2 + 1;   // 1mm above true wall bottom
+    wall_top = ARM_RISE + (PCB_H + 6)/2 - 1;   // 1mm below true wall top
+    back_buttress_one(arm_bot, wall_bot);      // lower buttress
+    back_buttress_one(arm_top, wall_top);      // upper buttress
+}
+
+// ============================================================================
 //  ASSEMBLED BRACKET
 // ============================================================================
 module bracket() {
@@ -187,6 +296,8 @@ module bracket() {
         cantilever_arm();
         gusset();
         sensor_mount();
+        if (STRUT_ENABLE) diagonal_strut();
+        if (BACK_BUTTRESS) back_buttress();
     }
 }
 
