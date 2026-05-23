@@ -1,0 +1,66 @@
+%% WRO v13 — Focused view 3: I²C buses (Wire + Wire1)
+%% Shows the dual-bus topology and the XSHUT runtime address remap.
+
+flowchart TB
+
+  classDef brain fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000
+  classDef sens  fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+  classDef pass  fill:#f3e5f5,stroke:#6a1b9a,stroke-width:1px,color:#000
+  classDef xs    fill:#fce4ec,stroke:#ad1457,stroke-width:2px,color:#000
+  classDef bus   fill:#fafafa,stroke:#424242,stroke-width:2px,color:#000
+
+  ESP["ESP32-S3-DevKitC-1<br/>N8R8"]:::brain
+
+  %% ============ I²C0 ============
+  subgraph I2C0 ["I²C0 · Wire · 400 kHz"]
+    direction LR
+    BUS0(("SDA: GPIO 8<br/>SCL: GPIO 9")):::bus
+    PU0a["4.7 kΩ → 3V3<br/>SDA"]:::pass
+    PU0b["4.7 kΩ → 3V3<br/>SCL"]:::pass
+    IMU["ICM-20948<br/>📍 0x68 · 3.3 V"]:::sens
+    AKM["└─ AK09916 mag<br/>📍 0x0C (secondary)"]:::sens
+    ASL["AS5600 Left<br/>📍 0x36 · 3.3 V"]:::sens
+    TFF["VL53L1X Front<br/>📍 0x29 → 0x30 · 5 V"]:::sens
+    BUS0 --- PU0a
+    BUS0 --- PU0b
+    BUS0 --- IMU
+    IMU -. "I²C aux" .- AKM
+    BUS0 --- ASL
+    BUS0 --- TFF
+  end
+
+  %% ============ I²C1 ============
+  subgraph I2C1 ["I²C1 · Wire1 · 400 kHz"]
+    direction LR
+    BUS1(("SDA: GPIO 11<br/>SCL: GPIO 12")):::bus
+    PU1a["4.7 kΩ → 3V3<br/>SDA"]:::pass
+    PU1b["4.7 kΩ → 3V3<br/>SCL"]:::pass
+    ASR["AS5600 Right<br/>📍 0x36 · 3.3 V"]:::sens
+    TFS["VL53L1X Side<br/>📍 0x29 → 0x31 · 5 V"]:::sens
+    BUS1 --- PU1a
+    BUS1 --- PU1b
+    BUS1 --- ASR
+    BUS1 --- TFS
+  end
+
+  ESP ==> BUS0
+  ESP ==> BUS1
+
+  %% ============ XSHUT REMAP ============
+  subgraph XSHUTctl ["VL53L1X XSHUT remap"]
+    direction TB
+    NOTE["1. Hold ALL XSHUT LOW at boot.<br/>2. Release Front, write 0x30.<br/>3. Release Side, write 0x31.<br/>(See vl53l1x_dual.h)"]
+    XF["GPIO 15 · XSHUT Front"]:::xs
+    XS["GPIO 16 · XSHUT Side"]:::xs
+    XR["GPIO 47 · reserved 3rd VL53L1X"]:::xs
+  end
+  ESP --> XF
+  ESP --> XS
+  ESP -. "(reserved)" .- XR
+  XF --> TFF
+  XS --> TFS
+
+  %% ============ ADDRESS CONFLICT NOTE ============
+  CONFLICT["⚠ Both AS5600 = 0x36 fixed.<br/>Dual-bus topology resolves it<br/>WITHOUT TCA9548A mux."]
+  CONFLICT --- ASL
+  CONFLICT --- ASR
