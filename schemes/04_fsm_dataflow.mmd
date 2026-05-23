@@ -1,0 +1,97 @@
+%% WRO v13 — Focused view 4: Firmware FSM + sensor data flow
+%% Not a wiring diagram — describes how data moves through the firmware.
+%% Reference: src/esp32/eps323.cpp
+
+flowchart LR
+
+  classDef state  fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000
+  classDef safe   fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
+  classDef sens   fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+  classDef proc   fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000
+  classDef ctrl   fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000
+  classDef act    fill:#fce4ec,stroke:#ad1457,stroke-width:2px,color:#000
+
+  %% ============ FSM ============
+  subgraph FSM ["Firmware FSM"]
+    direction TB
+    INIT(["INIT — boot, scan, arm WDT"]):::state
+    TRK(["TRACKING — dual-loop PID"]):::state
+    BLD(["BLIND_TURN — wall under 35 cm x 3 frames"]):::state
+    PARK(["PARKING — APPROACH ALIGN CREEP FINAL"]):::state
+    FIN(["FINISH — 3 laps plus magenta"]):::state
+    SAFE(["SAFE_STOP — E-Stop GPIO 21 interrupt"]):::safe
+
+    INIT --> TRK
+    TRK -- "wall/pillar + dirConfirmed" --> BLD
+    BLD -- "turn complete" --> TRK
+    TRK -- "lapCount 3+ and magenta" --> PARK
+    PARK --> FIN
+    TRK -.->|"E-Stop"| SAFE
+    BLD -.->|"E-Stop"| SAFE
+    PARK -.->|"E-Stop"| SAFE
+    SAFE -- "released" --> TRK
+  end
+
+  %% ============ INPUTS ============
+  subgraph IN ["Inputs (per 10 ms loop)"]
+    direction TB
+    ASLs["AS5600 L · Wire @ 0x36"]:::sens
+    ASRs["AS5600 R · Wire1 @ 0x36"]:::sens
+    IMUs["ICM-20948 @ 0x68 plus AK09916 mag @ 0x0C"]:::sens
+    VLFs["VL53L1X Front · Wire @ 0x30"]:::sens
+    VLSs["VL53L1X Side · Wire1 @ 0x31"]:::sens
+    CAMs["OpenMV H7+ · UART2 ASCII v3"]:::sens
+    ESTs["E-Stop GPIO 21"]:::safe
+  end
+
+  %% ============ PROCESSING ============
+  subgraph PROC ["Processing"]
+    direction TB
+    ODOM["Odometry · 277 ticks/cm · D=47 mm"]:::proc
+    FUSE["IMU+Mag complementary filter"]:::proc
+    WALL["Wall / pillar logic (front + side mm)"]:::proc
+    VIS["Vision parse (red, green, magenta blobs)"]:::proc
+  end
+
+  ASLs --> ODOM
+  ASRs --> ODOM
+  IMUs --> FUSE
+  VLFs --> WALL
+  VLSs --> WALL
+  CAMs --> VIS
+
+  %% ============ CONTROL ============
+  subgraph CTL ["Control"]
+    direction TB
+    PIDp["Position PID · Kp=0.50 Kd=0.10 Ki=0.001 · integral clamp +/- 50"]:::ctrl
+    PIDh["Heading PID · Kp_gyro=1.20"]:::ctrl
+    DYN["Dynamic offset PID · +/- 35 when obs under 60 cm"]:::ctrl
+    BATTC["Battery comp · Vbat ADC scale"]:::ctrl
+  end
+
+  ODOM --> PIDp
+  FUSE --> PIDh
+  WALL --> DYN
+  VIS --> DYN
+  DYN --> PIDp
+
+  %% ============ OUTPUTS ============
+  subgraph OUT ["Outputs"]
+    direction TB
+    MPWM["Motor PWM (LEDC Ch0/Ch1, BTS7960)"]:::act
+    SPWM["Servo us (1000-2000 us)"]:::act
+  end
+
+  PIDp --> MPWM
+  PIDh --> SPWM
+  BATTC -.-> MPWM
+
+  %% ============ FSM linkage to data ============
+  PIDp -.->|"drives"| TRK
+  PIDh -.->|"drives"| TRK
+  WALL -.->|"triggers"| BLD
+  VIS  -.->|"triggers"| PARK
+  ODOM -.->|"counts laps for"| FIN
+  ESTs --> SAFE
+  SAFE --> MPWM
+  SAFE --> SPWM
