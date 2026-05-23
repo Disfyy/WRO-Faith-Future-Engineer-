@@ -1,150 +1,133 @@
-%% WRO v13 — Detailed wiring diagram
-%% Per-wire detail: rail voltage, GPIO, decoupling, every return to star ground.
-%% Companion: WRO_Full_System_Diagram.mmd (higher-level overview).
+flowchart LR
 
-flowchart TB
+  %% Styles
+  classDef power fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000;
+  classDef gnd fill:#e0e0e0,stroke:#37474f,stroke-width:2px,color:#000;
+  classDef signal fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000;
+  classDef sensor fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000;
+  classDef brains fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000;
+  classDef star fill:#000000,color:#ffffff,shape:circle,stroke-width:4px,stroke:#ffeb3b;
 
-  classDef brain  fill:#fff8e1,stroke:#f9a825,stroke-width:2px,color:#000
-  classDef cam    fill:#fff3e0,stroke:#ef6c00,stroke-width:2px,color:#000
-  classDef act    fill:#fce4ec,stroke:#ad1457,stroke-width:2px,color:#000
-  classDef sens   fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
-  classDef pwr5   fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#000
-  classDef pwr3   fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
-  classDef pass   fill:#f3e5f5,stroke:#6a1b9a,stroke-width:1px,color:#000
-  classDef io     fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000
-  classDef star   fill:#212121,color:#ffeb3b,stroke:#ffeb3b,stroke-width:4px
-
-  %% ===== POWER SUPPLY =====
-  subgraph PWR ["1 · Power supply"]
-    direction LR
-    BATT["LiPo 2S/3S<br/>7.4–11.1 V<br/>≥35 C, ≥1.5 Ah"]:::pwr5
-    SW["KCD3 main switch"]:::pwr5
-    VBATT(["+VBAT bus"]):::pwr5
-    BUCK["LM2596 / D-SUN buck<br/>Vin → 5 V · 3 A"]:::pwr5
-    V5(["+5 V rail"]):::pwr5
-    C470["470 µF / 16 V<br/>(bulk @ V5)"]:::pass
-    C104_5["0.1 µF<br/>(HF @ V5)"]:::pass
-    BATT -- "+ red" --> SW
-    SW -- "+VBAT" --> VBATT
-    VBATT -- "VIN" --> BUCK
-    BUCK -- "+5 V" --> V5
-    V5 --- C470
-    V5 --- C104_5
-  end
-
-  %% ===== CONTROLLERS =====
-  subgraph BRAIN ["2 · Controllers"]
+  subgraph PWR [1. Power Supply]
     direction TB
-    ESP["<b>ESP32-S3-DevKitC-1</b><br/>N8R8 · 8 MB flash + 8 MB PSRAM<br/>3.3 V from onboard LDO"]:::brain
-    OMV["<b>OpenMV H7 Plus</b><br/>vision · UART2 @ 115200"]:::cam
-    ESTOP["E-STOP<br/>GPIO 21 · INPUT_PULLUP<br/>HW interrupt → SAFE_STOP"]:::io
-    LED["Status LED<br/>GPIO 2 · 220 Ω series"]:::io
-    RGB["WS2812 onboard<br/>GPIO 48"]:::io
+    BATT[LiPo 2S or 3S]:::power
+    SW[KCD3 Main Switch]:::power
+    V5[+5V Rail]:::power
+
+    STAR_PWR(((STAR GND))):::star
+
+    BATT -- "+VBAT" --> SW
+    BATT -- "GND -" --> STAR_PWR
+    SW -- "+VBAT" --> V5
+    STAR_PWR -- "GND -" --> V5
+
+    C470[470uF Cap]:::gnd
+    C104_5[0.1uF 5V]:::gnd
+    V5 -. "Filter" .- C470
+    V5 -. "Filter" .- C104_5
   end
 
-  V5 -- "+5 V → VIN" --> ESP
-  V5 -- "+5 V → VIN" --> OMV
-  ESP -- "UART2 RX  GPIO 17  ← TX" --- OMV
-  ESP -- "UART2 TX  GPIO 18  → RX" --- OMV
-  ESP -- "GPIO 21" --- ESTOP
-  ESP -- "GPIO 2 (anode)" --- LED
-  ESP -- "GPIO 48" --- RGB
-
-  %% ===== ACTUATORS =====
-  subgraph ACT ["3 · Drive and steering"]
+  subgraph BRAIN [2. Controllers]
     direction TB
-    BTS["BTS7960<br/>43 A H-Bridge"]:::act
-    MOT["Motor 380<br/>brushed DC"]:::act
-    SRV["JX PDI-6221MG<br/>digital steering servo<br/>SERVO_CENTER=90"]:::act
-    C104_BTS["0.1 µF<br/>(BTS logic VCC-GND)"]:::pass
-    CMOT["3× 0.1 µF<br/>(motor EMI:<br/> term-term, term-case ×2)"]:::pass
+    ESP[ESP32-S3-DevKitC-1 N8R8]:::brains
+    OMV[OpenMV H7 Plus]:::brains
+    ESTOP[E-STOP GPIO21]:::signal
+    LED[Status LED GPIO2]:::signal
+    RGB[Onboard WS2812 GPIO48]:::signal
+
+    STAR_BRAIN(((STAR GND))):::star
+
+    V5 -- "5V -> VIN" --> ESP
+    STAR_BRAIN -- "GND" --> ESP
+
+    V5 -- "5V -> VIN" --> OMV
+    STAR_BRAIN -- "GND" --> OMV
+
+    ESP -- "UART2 GPIO17 RX <- TX" --> OMV
+    ESP -- "UART2 GPIO18 TX -> RX" --> OMV
+
+    ESP -- "GPIO21" --> ESTOP
+    STAR_BRAIN -- "GND" --> ESTOP
+
+    ESP -- "GPIO2 (Anode)" --> LED
+    STAR_BRAIN -- "Cathode" --> LED
+    ESP -- "GPIO48" --> RGB
   end
 
-  VBATT -- "+VBAT → B+" --> BTS
-  V5 -- "+5 V → VCC (logic)" --> BTS
-  V5 --- C104_BTS
-  ESP -- "GPIO 38 R_EN" --- BTS
-  ESP -- "GPIO 39 L_EN" --- BTS
-  ESP -- "GPIO 40 R_PWM (LEDC Ch0)" --- BTS
-  ESP -- "GPIO 41 L_PWM (LEDC Ch1)" --- BTS
-  BTS -- "M+ (red)" --> MOT
-  BTS -- "M− (black)" --> MOT
-  MOT --- CMOT
-
-  V5 -- "+5 V (red)" --> SRV
-  ESP -- "GPIO 42 PWM (orange · LEDC Ch2 · 50 Hz)" --- SRV
-
-  %% ===== I²C0 BUS =====
-  subgraph I2C0 ["4 · I²C0 — Wire (GPIO 8/9)"]
+  subgraph DRIVE [3. Motor and Servo]
     direction TB
-    IMU["ICM-20948<br/>0x68 (AD0=GND)<br/>+ AK09916 mag 0x0C aux"]:::sens
-    ASL["AS5600 Left<br/>0x36 (factory)"]:::sens
-    TFF["VL53L1X Front<br/>0x29 → 0x30 post-XSHUT"]:::sens
-    PU0A["4.7 kΩ SDA → 3V3"]:::pass
-    PU0B["4.7 kΩ SCL → 3V3"]:::pass
-    C104_IMU["0.1 µF<br/>(IMU VCC-GND)"]:::pass
-    C104_ASL["0.1 µF<br/>(AS5600 L VCC-GND)"]:::pass
-    C104_TFF["0.1 µF<br/>(VL53L1X F VIN-GND)"]:::pass
+    BTS[BTS7960 Driver]:::signal
+    MOT[Motor 380]:::power
+    SRV[JX PDI-6221MG]:::signal
+
+    STAR_DRIVE(((STAR GND))):::star
+
+    SW -- "+VBAT -> B+" --> BTS
+    STAR_DRIVE -- "GND -> B-" --> BTS
+    V5 -- "+5V -> VCC" --> BTS
+    STAR_DRIVE -- "Logic GND" --> BTS
+
+    ESP -- "GPIO38/39 (EN)" --> BTS
+    ESP -- "GPIO40/41 (PWM)" --> BTS
+    BTS -- "M+" --> MOT
+    BTS -- "M-" --> MOT
+
+    V5 -- "+5V (Red)" --> SRV
+    STAR_DRIVE -- "GND (Brown)" --> SRV
+    ESP -- "GPIO42 (Orange)" --> SRV
+
+    CM[3x 0.1uF Motor Filter]:::gnd
+    MOT -. "Noise Filter" .- CM
   end
 
-  ESP -- "+3.3 V (onboard LDO)" --> PU0A
-  ESP -- "+3.3 V" --> PU0B
-  ESP -- "+3.3 V → VCC" --- IMU
-  ESP -- "+3.3 V → VCC" --- ASL
-  V5  -- "+5 V → VIN" --- TFF
-  ESP -- "GPIO 8 SDA" --- PU0A
-  ESP -- "GPIO 9 SCL" --- PU0B
-  PU0A --- IMU
-  PU0A --- ASL
-  PU0A --- TFF
-  PU0B --- IMU
-  PU0B --- ASL
-  PU0B --- TFF
-  ESP -- "GPIO 15 XSHUT (boot-LOW · then HIGH · then write 0x30)" --- TFF
-  IMU --- C104_IMU
-  ASL --- C104_ASL
-  TFF --- C104_TFF
-
-  %% ===== I²C1 BUS =====
-  subgraph I2C1 ["5 · I²C1 — Wire1 (GPIO 11/12)"]
+  subgraph I2C0 [4. I2C0 Wire - IMU + AS5600 L + VL53L1X Front]
     direction TB
-    ASR["AS5600 Right<br/>0x36 (factory)"]:::sens
-    TFS["VL53L1X Side<br/>0x29 → 0x31 post-XSHUT"]:::sens
-    PU1A["4.7 kΩ SDA → 3V3"]:::pass
-    PU1B["4.7 kΩ SCL → 3V3"]:::pass
-    C104_ASR["0.1 µF<br/>(AS5600 R VCC-GND)"]:::pass
-    C104_TFS["0.1 µF<br/>(VL53L1X S VIN-GND)"]:::pass
+    IMU[ICM-20948 @ 0x68]:::sensor
+    AS5600L[AS5600 Left @ 0x36]:::sensor
+    TFFR[VL53L1X Front 0x29 -> 0x30]:::sensor
+    PULL0[4.7k Pull-ups]:::gnd
+
+    STAR_I2C0(((STAR GND))):::star
+
+    ESP -- "+3.3V onboard reg" --> PULL0
+    ESP -- "GPIO8 SDA, GPIO9 SCL" --> PULL0
+    PULL0 -- "SDA, SCL" --> IMU
+    PULL0 -- "SDA, SCL" --> AS5600L
+    PULL0 -- "SDA, SCL" --> TFFR
+
+    ESP -- "+3.3V VCC, AD0->GND" --> IMU
+    ESP -- "+3.3V VCC" --> AS5600L
+    V5  -- "+5V VIN" --> TFFR
+    ESP -- "GPIO15 XSHUT (HIGH after boot remap)" --> TFFR
+
+    STAR_I2C0 -- "GND" --> IMU
+    STAR_I2C0 -- "GND" --> AS5600L
+    STAR_I2C0 -- "GND" --> TFFR
   end
 
-  ESP -- "+3.3 V" --> PU1A
-  ESP -- "+3.3 V" --> PU1B
-  ESP -- "+3.3 V → VCC" --- ASR
-  V5  -- "+5 V → VIN" --- TFS
-  ESP -- "GPIO 11 SDA" --- PU1A
-  ESP -- "GPIO 12 SCL" --- PU1B
-  PU1A --- ASR
-  PU1A --- TFS
-  PU1B --- ASR
-  PU1B --- TFS
-  ESP -- "GPIO 16 XSHUT (boot-LOW · then HIGH · then write 0x31)" --- TFS
-  ASR --- C104_ASR
-  TFS --- C104_TFS
+  subgraph I2C1 [5. I2C1 Wire1 - AS5600 R + VL53L1X Side]
+    direction TB
+    AS5600R[AS5600 Right @ 0x36]:::sensor
+    TFSD[VL53L1X Side 0x29 -> 0x31]:::sensor
+    PULL1[4.7k Pull-ups]:::gnd
 
-  %% ===== STAR GROUND =====
-  GND((("⭐<br/>STAR<br/>GND")))
-  class GND star
+    STAR_I2C1(((STAR GND))):::star
 
-  BATT -.->|"−"| GND
-  V5 -.->|"GND"| GND
-  BTS -.->|"B− and Logic GND"| GND
-  ESP -.->|"GND"| GND
-  OMV -.->|"GND"| GND
-  SRV -.->|"GND (brown)"| GND
-  ESTOP -.- GND
-  LED -.->|"cathode"| GND
-  IMU -.- GND
-  ASL -.- GND
-  ASR -.- GND
-  TFF -.- GND
-  TFS -.- GND
-  MOT -.- GND
+    ESP -- "+3.3V onboard reg" --> PULL1
+    ESP -- "GPIO11 SDA, GPIO12 SCL" --> PULL1
+    PULL1 -- "SDA, SCL" --> AS5600R
+    PULL1 -- "SDA, SCL" --> TFSD
+
+    ESP -- "+3.3V VCC" --> AS5600R
+    V5  -- "+5V VIN" --> TFSD
+    ESP -- "GPIO16 XSHUT (HIGH after boot remap)" --> TFSD
+
+    STAR_I2C1 -- "GND" --> AS5600R
+    STAR_I2C1 -- "GND" --> TFSD
+  end
+
+  %% Connect the Star Grounds (single physical point)
+  STAR_PWR ===|ALL STAR GROUNDS CONNECT TO ONE POINT| STAR_BRAIN
+  STAR_BRAIN === STAR_DRIVE
+  STAR_DRIVE === STAR_I2C0
+  STAR_I2C0 === STAR_I2C1
