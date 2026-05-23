@@ -46,7 +46,7 @@ Official source:
 | I-SAFE-ESTOP | E-Stop must force safe stop in all states | `src/esp32/eps323.cpp:349` (`safeStop`), `src/esp32/eps323.cpp:366` (`checkEStop`) | TC-02 | NEEDS TRACK VERIFY |
 | I-SAFE-CAM | Camera timeout warning + offline safe stop | `src/esp32/eps323.cpp:139`, `src/esp32/eps323.cpp:140`, `src/esp32/eps323.cpp:731`, `src/esp32/eps323.cpp:1153` | TC-03 | NEEDS TRACK VERIFY |
 | I-SAFE-ENC | Persistent encoder loss must trigger safe stop | `src/esp32/eps323.cpp` (`updateOdometry`, encoder fault path) | TC-04 | NEEDS TRACK VERIFY |
-| I-I2C-MAP | Dual-bus device map must match firmware (no TCA9548A in v13) | `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md` Stage 6, `docs/guides/WRO_Wiring_Map_v13.md` | `scan_i2c_v13.cpp` (target 2) + TC-01 | NEEDS PHYSICAL VERIFY |
+| I-I2C-MAP | Dual-bus device map must match firmware (no TCA9548A in v13) | `docs/guides/WRO_Robot_Assembly_and_Startup_Guide.md` Stage 6, `docs/guides/WRO_Wiring_Map_v13.md` | `diag_scan_i2c_v13.cpp` (target 2) + TC-01 | NEEDS PHYSICAL VERIFY |
 | I-LAPS-3 | Target laps must be 3 in both modes | `src/esp32/eps323.cpp:160`, `src/esp32/eps323.cpp:640` | TC-05 / TC-08 | NEEDS TRACK VERIFY |
 | I-UART-V3 | OpenMV must send 6-field UART v3 frame with CRC | `docs/guides/WRO_OpenMV_UART_Protocol.md`, `src/openmv/openmv_main.py` frame assembly | Serial parsing check + TC-03 | NEEDS TRACK VERIFY |
 

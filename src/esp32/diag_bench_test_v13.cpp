@@ -30,11 +30,14 @@
 Adafruit_ICM20948 icm;
 Servo steeringServo;
 
+#define BENCH_CAM_BUF   96
+#define BENCH_CMD_BUF   64
+
 bool imuOK      = false;
 bool encOK      = false;
 bool liveMode   = false;
 unsigned long motorStopAt = 0;
-String camLast  = "";
+char camLast[BENCH_CAM_BUF] = {0};
 unsigned long camLastMs = 0;
 
 void printHelp() {
@@ -100,7 +103,12 @@ void printStatus() {
 
   // Camera
   Serial.print("Camera (UART2): ");
-  Serial.println(millis() - camLastMs < 1000 ? ("receiving: " + camLast) : "NO DATA");
+  if (millis() - camLastMs < 1000) {
+    Serial.print("receiving: ");
+    Serial.println(camLast);
+  } else {
+    Serial.println("NO DATA");
+  }
 
   // E-Stop
   Serial.print("E-Stop (GPIO"); Serial.print(ESTOP_PIN); Serial.print("): ");
@@ -121,16 +129,15 @@ void printLive() {
   Serial.println();
 }
 
-void handleCmd(String cmd) {
-  cmd.trim();
-  if      (cmd == "s") printStatus();
-  else if (cmd == "m") motorFwd(120, 2000);
-  else if (cmd == "r") motorRev(120, 2000);
-  else if (cmd == "l") { steeringServo.write(SERVO_MAX_LEFT);  Serial.println("Servo LEFT");   }
-  else if (cmd == "c") { steeringServo.write(SERVO_CENTER);    Serial.println("Servo CENTER"); }
-  else if (cmd == "k") { steeringServo.write(SERVO_MAX_RIGHT); Serial.println("Servo RIGHT");  }
-  else if (cmd == "e") { liveMode = !liveMode; Serial.print("Live: "); Serial.println(liveMode ? "ON" : "OFF"); }
-  else if (cmd == "h") printHelp();
+void handleCmd(const char *cmd) {
+  if      (strcmp(cmd, "s") == 0) printStatus();
+  else if (strcmp(cmd, "m") == 0) motorFwd(120, 2000);
+  else if (strcmp(cmd, "r") == 0) motorRev(120, 2000);
+  else if (strcmp(cmd, "l") == 0) { steeringServo.write(SERVO_MAX_LEFT);  Serial.println("Servo LEFT");   }
+  else if (strcmp(cmd, "c") == 0) { steeringServo.write(SERVO_CENTER);    Serial.println("Servo CENTER"); }
+  else if (strcmp(cmd, "k") == 0) { steeringServo.write(SERVO_MAX_RIGHT); Serial.println("Servo RIGHT");  }
+  else if (strcmp(cmd, "e") == 0) { liveMode = !liveMode; Serial.print("Live: "); Serial.println(liveMode ? "ON" : "OFF"); }
+  else if (strcmp(cmd, "h") == 0) printHelp();
   else { Serial.print("Unknown: "); Serial.println(cmd); }
 }
 
@@ -173,19 +180,35 @@ void setup() {
 }
 
 void loop() {
-  static String inputBuf = "";
+  static char   inputBuf[BENCH_CMD_BUF] = {0};
+  static size_t inputBufPos             = 0;
   while (Serial.available()) {
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
-      if (inputBuf.length()) { handleCmd(inputBuf); inputBuf = ""; }
-    } else { inputBuf += c; }
+      if (inputBufPos > 0) {
+        inputBuf[inputBufPos] = '\0';
+        handleCmd(inputBuf);
+        inputBufPos = 0;
+      }
+    } else if (inputBufPos < sizeof(inputBuf) - 1) {
+      inputBuf[inputBufPos++] = c;
+    }
+    // else: silently drop chars past the buffer cap (oversize line ignored).
   }
 
-  static String uartBuf = "";
+  static char   uartBuf[BENCH_CAM_BUF] = {0};
+  static size_t uartBufPos             = 0;
   while (Serial2.available()) {
     char c = Serial2.read();
-    if (c == '\n') { camLast = uartBuf; camLastMs = millis(); uartBuf = ""; }
-    else if (c != '\r') { uartBuf += c; }
+    if (c == '\n') {
+      uartBuf[uartBufPos] = '\0';
+      strncpy(camLast, uartBuf, sizeof(camLast) - 1);
+      camLast[sizeof(camLast) - 1] = '\0';
+      camLastMs = millis();
+      uartBufPos = 0;
+    } else if (c != '\r' && uartBufPos < sizeof(uartBuf) - 1) {
+      uartBuf[uartBufPos++] = c;
+    }
   }
 
   vl53_readAll();

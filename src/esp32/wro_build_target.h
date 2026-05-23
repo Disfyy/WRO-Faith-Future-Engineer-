@@ -15,15 +15,15 @@
 // 9 (TEST_VL53L1X), 10 (BENCH_TEST).
 
 #define WRO_TARGET_EPS323                  1   // ARCHIVED v11 — legacy/legacy_eps323.cpp
-#define WRO_TARGET_SCAN_I2C                2   // v13 — scan_i2c_v13.cpp (both buses)
+#define WRO_TARGET_SCAN_I2C                2   // v13 — diag_scan_i2c_v13.cpp (both buses)
 #define WRO_TARGET_TEST_MOTOR_SERVO_DRIVE  3   // ARCHIVED v11 — legacy/legacy_test_motor_servo_drive.cpp
 #define WRO_TARGET_TEST_NO_SENSORS         4   // ARCHIVED v11 — legacy/legacy_test_no_sensors.cpp
 #define WRO_TARGET_TEST_SERVO              5   // ARCHIVED v11 — legacy/legacy_test_servo.cpp
 #define WRO_TARGET_TEST_SHORT_SEQUENCE     6   // ARCHIVED v11 — legacy/legacy_test_short_sequence.cpp
 #define WRO_TARGET_TEST_SERVO_CAL          7   // ARCHIVED v11 — legacy/legacy_test_servo_calibrate.cpp (needs v13 port)
-#define WRO_TARGET_TEST_ENCODERS           8   // v13 — test_encoders.cpp (AS5600 dual I2C)
-#define WRO_TARGET_TEST_VL53L1X            9   // v13 — test_vl53l1x.cpp
-#define WRO_TARGET_BENCH_TEST              10  // v13 — bench_test_v13.cpp
+#define WRO_TARGET_TEST_ENCODERS           8   // v13 — diag_test_encoders.cpp (AS5600 dual I2C)
+#define WRO_TARGET_TEST_VL53L1X            9   // v13 — diag_test_vl53l1x.cpp
+#define WRO_TARGET_BENCH_TEST              10  // v13 — diag_bench_test_v13.cpp
 #define WRO_TARGET_V13_MAIN                11  // v13 — wro_v13_main.cpp  ← ACTIVE
 
 // ── Active target — edit only this single #define line ────────

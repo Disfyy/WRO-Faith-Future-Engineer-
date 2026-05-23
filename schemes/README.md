@@ -1,7 +1,7 @@
 # Schemes — wiring diagrams & system schematics
 
 This folder is the visual reference for the WRO Future Engineers vehicle.
-Everything here describes the **v13 hardware revision** (ESP32-S3-DevKitC-1 + 2× AS5600 on dual native I²C + 2× VL53L1X with XSHUT runtime address remap).
+Everything here describes the **v13 hardware revision** (ESP32-S3-DevKitC-1 + 2× AS5600 on dual native I²C + 2× VL53L1X with XSHUT runtime address remap, **no TCA9548A mux**).
 
 The authoritative long-form pin reference lives at
 [`../docs/guides/WRO_Wiring_Map_v13.md`](../docs/guides/WRO_Wiring_Map_v13.md).
@@ -11,7 +11,7 @@ The files here summarise that reference visually.
 
 ## Reading order
 
-If you're new to the project, read in this order:
+If you're new to the project (or a judge orienting yourself from the file tree), read in this order:
 
 1. **[`WRO_Wiring_Map.md`](WRO_Wiring_Map.md)** — at-a-glance pin map, I²C address table, power rails, pre-flight checks.
 2. **[`05_mechanical_layout.md`](05_mechanical_layout.md)** — where things physically sit on the chassis and how to route the bundles.
