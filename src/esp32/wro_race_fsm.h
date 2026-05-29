@@ -21,7 +21,7 @@ enum RaceState {
   RS_WAIT_START = 1,
   RS_RUN_OPEN   = 2,
   RS_RUN_OBS    = 3,
-  RS_TURN       = 4,
+  RS_TURN       = 4,   // reserved/unused in v13 (corner FSM runs inside RUN_*); kept for SAFE_STOP resume-map
   RS_PARKING    = 5,
   RS_FINISH     = 6,
   RS_SAFE_STOP  = 7

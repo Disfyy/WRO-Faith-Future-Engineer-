@@ -85,13 +85,15 @@ static void detectDirection() {
 }
 
 static void updateLapCounter(unsigned long now) {
-  // Primary: gyro 360° accumulator, signed against the locked race direction.
-  // - Backward yaw → ilaps decreases → no spurious lap fire.
+  // Primary: gyro 360-degree accumulator. Count from the MAGNITUDE of total
+  // yaw so the locked race direction can't invert the sign. The OLD form
+  //   (g_yaw_total * globalDirection)
+  // was sign-inverted in BOTH directions (with +yaw=CCW: CW -> neg*(+1),
+  // CCW -> pos*(-1)), so ilaps stayed <= 0 and g_lap_count never incremented
+  // -> the robot never reached FINISH (Open) or the parking trigger (Obstacle).
   // - lastIlaps is monotonic (never regresses) so a brief back-spin then
   //   forward return can't re-credit the same lap once cooldown expires.
-  // - If direction never confirmed (stays at -1 default) and the actual race
-  //   is CW, ilaps will stay ≤ 0 and no lap fires. Fail-safe over fail-loud.
-  float laps  = (g_yaw_total * (float)globalDirection) / GYRO_LAP_DEG;
+  float laps  = fabsf(g_yaw_total) / GYRO_LAP_DEG;
   int   ilaps = (int)laps;
   static int lastIlaps = 0;
   if (ilaps > lastIlaps && (now - lastLapMs) > LAP_COOLDOWN_MS) {
@@ -327,8 +329,8 @@ void race_update() {
       break;
   }
 
-  // Brownout proxy: PWM>0 but speed near zero for too long → warn.
-  if (g_cmd_speed_pwm > MIN_DRIVE_PWM && fabsf(g_speed_cm_s) < 5.0f) {
+  // Brownout proxy: |PWM|>deadband but speed near zero for too long -> warn (covers reverse).
+  if (abs(g_cmd_speed_pwm) > MIN_DRIVE_PWM && fabsf(g_speed_cm_s) < 5.0f) {
     if (brownoutWarnSinceMs == 0) brownoutWarnSinceMs = now;
     else if (now - brownoutWarnSinceMs > BROWNOUT_PROXY_MS) {
       Serial.println("WARN: motor stalled (brownout proxy)");
