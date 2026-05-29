@@ -2,7 +2,7 @@
 /*
  * Camera UART parser — OpenMV H7 Plus → ESP32-S3 over UART2 (GPIO 17/18)
  *
- * Frame format (UART v3, 115200 8N1):
+ * Frame format (UART v3.1, 115200 8N1):
  *   RedX,RedDist,GreenX,GreenDist,ModeFlag,ExtraTag*XX\n
  *   - 5 commas, 6 fields, 1-byte XOR checksum (hex, 2 chars after '*')
  *   - Frame rate ~50 Hz
@@ -21,7 +21,7 @@
 #include <stdint.h>
 
 struct CameraData {
-  int  redX;       // -160..160; 0 = not seen
+  int  redX;       // -80..79 (cx-80 on 160px frame); "not seen" => redDist==999, not redX==0
   int  redDist;    // 0..999 cm; 999 = not seen
   int  greenX;
   int  greenDist;
