@@ -19,7 +19,7 @@ from pyb import UART, LED
 #               in v13 firmware. Camera always emits 0 here.
 #
 # ExtraTag:
-#   X-position of magenta block (-160..160) when bit 2 is set, else 0.
+#   X-position of magenta block (-80..79, = cx-80) when bit 2 is set, else 0.
 #
 # References to WRO 2026 Future Engineers Game Rules
 # (docs/rules/WRO-2026-Future-Engineers-Self-Driving-Cars-General-Rules.md):

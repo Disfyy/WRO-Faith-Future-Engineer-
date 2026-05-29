@@ -10,7 +10,6 @@ int  g_corner_steer_us    = SERVO_CENTER_US;
 int  g_corner_speed_pwm   = OPEN_MAX_PWM;
 int  g_corner_state       = CN_ARMED;
 bool g_corner_just_exited = false;
-float g_corner_exit_yaw   = 0.0f;
 
 static int           turnDirection      = -1;       // +1 right (CW), -1 left (CCW)
 static unsigned long stateEnteredMs     = 0;
@@ -35,7 +34,13 @@ void corner_init() {
 
 void corner_reset() { corner_init(); }
 void corner_set_direction(int dir) { turnDirection = (dir >= 0) ? +1 : -1; }
-bool corner_active()  { return g_corner_state == CN_BRAKE || g_corner_state == CN_EXECUTE; }
+bool corner_active()  {
+  // Own the actuators from the first slowdown tick through turn execution. If
+  // SLOWDOWN/COMMIT are excluded, the behavior module overwrites the corner's
+  // reduced speed with full PWM and the robot reaches the wall at full speed.
+  return g_corner_state == CN_SLOWDOWN || g_corner_state == CN_COMMIT ||
+         g_corner_state == CN_BRAKE    || g_corner_state == CN_EXECUTE;
+}
 bool corner_failed()  { return g_corner_state == CN_FAIL; }
 
 void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned long now) {
@@ -108,7 +113,6 @@ void corner_update(float yaw_deg, int tf_front_mm, bool tf_front_ok, unsigned lo
         // set the flag AFTER entering CN_EXIT — otherwise race_fsm never
         // sees the exit edge and never snaps the heading target.
         enter(CN_EXIT, now);
-        g_corner_exit_yaw    = yaw_deg;
         g_corner_just_exited = true;
       }
       break;

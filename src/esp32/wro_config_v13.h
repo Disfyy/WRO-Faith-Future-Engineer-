@@ -62,7 +62,10 @@
 // ============================================================
 // 3.  OBSTACLE CHALLENGE — pillar avoidance PID
 // ============================================================
-#define PILLAR_OFFSET_PX        60      // setpoint shift (px) for active pillar
+#define PILLAR_OFFSET_PX        30      // setpoint shift (px) for active pillar.
+                                        // Camera X is ±80 (cx−80 on a 160px frame), NOT ±160;
+                                        // 60 was sized for a ±160 span that never existed.
+                                        // RE-TUNE ON TRACK together with PILLAR_KP.
 #define PILLAR_KP               0.45f
 #define PILLAR_KI               0.001f
 #define PILLAR_KD               0.30f

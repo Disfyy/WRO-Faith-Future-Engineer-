@@ -16,6 +16,15 @@ static unsigned long stableSinceMs    = 0;
 static unsigned long camLossSinceMs   = 0;
 static int           bayDir           = +1;   // +1 = bay to the right of robot, -1 left
 
+// Clamp steering to the servo's safe mechanical range. PK_APPROACH/PK_REV_C
+// compute SERVO_CENTER_US + HEADING_KP*herr, which overshoots the end-stops on
+// a large heading error; previously only writeSteeringUs() guarded that.
+static inline int parkClampSteerUs(int us) {
+  if (us > SERVO_RIGHT_SAFE_US) us = SERVO_RIGHT_SAFE_US;
+  if (us < SERVO_LEFT_SAFE_US)  us = SERVO_LEFT_SAFE_US;
+  return us;
+}
+
 void park_init() {
   g_park_phase = PK_IDLE;
   g_park_steer_us = SERVO_CENTER_US;
@@ -65,7 +74,7 @@ void park_update(float yaw_deg, float yaw_rate_dps,
     case PK_APPROACH: {
       // Heading-hold while creeping forward; stop at back-wall or when bay is clearly visible.
       float herr = wrap180(parkTargetYaw - yaw_deg);
-      g_park_steer_us  = (int)(SERVO_CENTER_US + HEADING_KP * herr);
+      g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
       g_park_speed_pwm = PARK_APPROACH_PWM;
 
       // Decide bay side from magenta X. `cam.extraTag` carries the magenta
@@ -128,7 +137,7 @@ void park_update(float yaw_deg, float yaw_rate_dps,
     case PK_REV_C: {
       // Straight back until total reverse > PARK_PHASE_C_CM OR front clears.
       float herr = wrap180(parkTargetYaw - yaw_deg);
-      g_park_steer_us  = (int)(SERVO_CENTER_US + HEADING_KP * herr);
+      g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
       g_park_speed_pwm = -PARK_REV_PWM;
 
       long delta = enc_avg_ticks_signed - phaseStartTicks;

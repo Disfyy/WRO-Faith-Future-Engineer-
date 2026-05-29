@@ -85,6 +85,17 @@ static bool vl53_boot_one(VL53L1Sensor &s, TwoWire &bus,
     return false;
   }
   s.sensor.setAddress(targetAddr);
+  // Verify the remap actually took. setAddress() returns void (a NAK is lost),
+  // so probe the new address directly: a silent failure leaves the device at
+  // 0x29 and would collide with a same-bus sensor (e.g. the reserved third).
+  s.bus->beginTransmission(targetAddr);
+  if (s.bus->endTransmission() != 0) {
+    Serial.print("VL53L1X "); Serial.print(name);
+    Serial.println(": address remap FAILED (no ACK at target) - disabling");
+    s.ok = false;
+    digitalWrite(xshut, LOW);
+    return false;
+  }
   s.sensor.setDistanceMode(VL53L1X::Medium);
   s.sensor.setMeasurementTimingBudget(50000);   // µs
   s.sensor.startContinuous(50);                 // ms between reads → 20 Hz

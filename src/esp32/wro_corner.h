@@ -59,4 +59,3 @@ extern int  g_corner_state;        // for telemetry
 
 // Triggered after EXIT — race FSM should snap target heading to nearest 90°.
 extern bool g_corner_just_exited;
-extern float g_corner_exit_yaw;
