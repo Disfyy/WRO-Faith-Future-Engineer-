@@ -29,8 +29,12 @@
 static inline bool as5600_init() {
   Wire.begin(I2C0_SDA, I2C0_SCL);
   Wire.setClock(I2C_FREQ_HZ);
+  Wire.setTimeOut(10);            // ms — fail fast on a wedged bus so the loop
+                                  // degrades via the ENC/IMU fail-limits instead
+                                  // of stalling into a watchdog panic-reset.
   Wire1.begin(I2C1_SDA, I2C1_SCL);
   Wire1.setClock(I2C_FREQ_HZ);
+  Wire1.setTimeOut(10);
 
   bool leftOk  = false;
   bool rightOk = false;
