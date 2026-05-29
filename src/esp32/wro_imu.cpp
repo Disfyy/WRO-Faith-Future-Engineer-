@@ -5,6 +5,7 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 #include <esp_task_wdt.h>
+#include <math.h>
 #include "wro_config_v13.h"
 #include "wro_imu.h"
 
@@ -27,7 +28,7 @@ bool imu_init() {
   // other I2C0 device touches the bus. Don't duplicate that here — if init
   // order ever changes, fix it at the call site, not by re-init'ing the bus
   // from every driver.
-  if (!icm.begin_I2C(ICM20948_ADDRESS)) {
+  if (!icm.begin_I2C(ICM20948_ADDRESS, &Wire)) {
     g_imu_ok = false;
     return false;
   }
@@ -49,8 +50,9 @@ bool imu_calibrate_gyro() {
       n++;
     }
     if ((i % 50) == 0) Serial.print(".");
-    // Calibration blocks for ~3 s; pet the WDT each iteration so we don't
-    // false-trigger the 500 ms task watchdog set up in setup().
+    // Calibration blocks for ~3 s. The task WDT (WDT_TIMEOUT_MS = 200 ms) is
+    // armed AFTER this in setup(), so loopTask isn't subscribed yet and this
+    // reset() is a no-op today; kept as a defensive pet in case arming moves.
     esp_task_wdt_reset();
     delay(LOOP_INTERVAL_MS);
   }
@@ -75,17 +77,24 @@ void imu_update() {
 
   sensors_event_t a, g, t, m;
   if (!icm.getEvent(&a, &g, &t, &m)) {
+    g_yaw_rate = 0.0f;                      // no fresh sample -> report no rotation
     if (++failStreak >= IMU_FAIL_LIMIT) g_imu_ok = false;
     return;
   }
-  failStreak = 0;
+
+  float omegaZ = g.gyro.z - gyroZBias;     // rad/s, sign-corrected for chassis below
+  if (!isfinite(omegaZ)) {                 // reject NaN/Inf: one bad sample would
+    g_yaw_rate = 0.0f;                      // otherwise poison g_yaw/g_yaw_total forever
+    if (++failStreak >= IMU_FAIL_LIMIT) g_imu_ok = false;
+    return;
+  }
+  failStreak = 0;                          // only a fully valid sample clears the streak
 
   unsigned long now = millis();
   float dt = (now - lastImuMs) * 0.001f;
   lastImuMs = now;
   if (dt > IMU_DT_MAX) dt = IMU_DT_MAX;
 
-  float omegaZ = g.gyro.z - gyroZBias;     // rad/s, sign-corrected for chassis below
   float deltaDeg = -omegaZ * dt * 57.29577951f;  // negate so +yaw = CCW (standard)
 
   g_yaw_total += deltaDeg;
