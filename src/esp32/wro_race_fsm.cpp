@@ -23,9 +23,11 @@ int g_lap_count     = 0;
 
 // Direction: -1 = CCW (drive left from start), +1 = CW (drive right).
 // Determined dynamically from camera line color in WAIT_START or first lap;
-// defaults to CCW which is the team's historical hardcode.
-static int  globalDirection = -1;
+// defaults to DEFAULT_RACE_DIRECTION (set to your known start orientation in
+// wro_config_v13.h) until the camera confirms.
+static int  globalDirection = DEFAULT_RACE_DIRECTION;
 static bool directionConfirmed = false;
+static bool warnedUnconfirmedTurn = false;   // one-shot guard for the warning
 
 // Direction-detection debounce. The OpenMV camera can briefly flag both
 // orange and blue at sector boundaries or under threshold ambiguity, so we
@@ -38,6 +40,7 @@ static int  dirVoteCcw = 0;
 
 static int  prevRaceState         = RS_INIT;
 static int  magentaConfirmStreak  = 0;
+static unsigned long safeStopEnteredMs = 0;
 static unsigned long lastLapMs    = 0;
 static float lastLapYawTotal      = 0.0f;
 static unsigned long camLineLastSeen = 0;
@@ -47,6 +50,7 @@ static void enterState(int s) {
   if (g_race_state != s) {
     prevRaceState = g_race_state;
     g_race_state = s;
+    if (s == RS_SAFE_STOP) safeStopEnteredMs = millis();
   }
 }
 
@@ -84,6 +88,18 @@ static void detectDirection() {
   open_set_direction(globalDirection);
 }
 
+// Loud, one-shot notice if a corner maneuver begins while the camera has not
+// yet confirmed the race direction. The turn falls back to globalDirection
+// (DEFAULT_RACE_DIRECTION); if that default is wrong for the track the robot
+// turns into the wall and the corner FSM panics to SAFE_STOP. Worth a warning.
+static void warnIfUnconfirmedTurn() {
+  if (corner_active() && !directionConfirmed && !warnedUnconfirmedTurn) {
+    Serial.println("WARN: corner started with UNCONFIRMED direction - "
+                   "using DEFAULT_RACE_DIRECTION (check camera line detection)");
+    warnedUnconfirmedTurn = true;
+  }
+}
+
 static void updateLapCounter(unsigned long now) {
   // Primary: gyro 360-degree accumulator. Count from the MAGNITUDE of total
   // yaw so the locked race direction can't invert the sign. The OLD form
@@ -119,7 +135,14 @@ static void updateLapCounter(unsigned long now) {
 }
 
 static bool sensorsHealthy() {
+#if ENCODERS_PRESENT
   return g_imu_ok && g_enc_ok;
+#else
+  // No-encoder mode: the AS5600s can't report wheel motion without a magnet,
+  // so race health rides on the IMU alone. See ENCODERS_PRESENT in
+  // wro_config_v13.h. (g_enc_ok is left untouched for telemetry.)
+  return g_imu_ok;
+#endif
 }
 
 static void runStraightOpen(unsigned long now) {
@@ -173,11 +196,13 @@ void race_init() {
   g_cmd_steer_us  = SERVO_CENTER_US;
   g_cmd_speed_pwm = 0;
   g_lap_count = 0;
-  globalDirection = -1;
+  globalDirection = DEFAULT_RACE_DIRECTION;
   directionConfirmed = false;
+  warnedUnconfirmedTurn = false;
   dirVoteCw  = 0;
   dirVoteCcw = 0;
   magentaConfirmStreak = 0;
+  safeStopEnteredMs = 0;
   lastLapMs = 0;
   lastLapYawTotal = 0.0f;
   camLineLastSeen = 0;
@@ -242,6 +267,7 @@ void race_update() {
     case RS_RUN_OPEN: {
       detectDirection();
       corner_update(g_yaw, sens_tf_front_mm(), sens_tf_front_ok(), now);
+      warnIfUnconfirmedTurn();
       if (corner_failed()) { enterState(RS_SAFE_STOP); break; }
       runStraightOpen(now);
       updateLapCounter(now);
@@ -257,6 +283,7 @@ void race_update() {
     case RS_RUN_OBS: {
       detectDirection();
       corner_update(g_yaw, sens_tf_front_mm(), sens_tf_front_ok(), now);
+      warnIfUnconfirmedTurn();
       if (corner_failed()) { enterState(RS_SAFE_STOP); break; }
 
       // Camera silence escalation in Obstacle mode.
@@ -322,6 +349,10 @@ void race_update() {
           corner_reset();
           open_reset();
           obs_reset();
+          // Resuming a parking maneuver: re-anchor its timers so the no-encoder
+          // (time-based) reverse phases account for the pause instead of ending
+          // early. now == millis() at the top of race_update().
+          if (resumeTo == RS_PARKING) park_shift_clock(now - safeStopEnteredMs);
           enterState(resumeTo);
         }
         // else: unknown prev state → remain in RS_SAFE_STOP (defensive).
@@ -329,7 +360,9 @@ void race_update() {
       break;
   }
 
+#if ENCODERS_PRESENT
   // Brownout proxy: |PWM|>deadband but speed near zero for too long -> warn (covers reverse).
+  // Needs a real wheel-speed signal, so it is disabled in no-encoder mode.
   if (abs(g_cmd_speed_pwm) > MIN_DRIVE_PWM && fabsf(g_speed_cm_s) < 5.0f) {
     if (brownoutWarnSinceMs == 0) brownoutWarnSinceMs = now;
     else if (now - brownoutWarnSinceMs > BROWNOUT_PROXY_MS) {
@@ -339,6 +372,9 @@ void race_update() {
   } else {
     brownoutWarnSinceMs = 0;
   }
+#else
+  (void)brownoutWarnSinceMs;   // speed signal needs encoders; proxy disabled
+#endif
 
   // Health failsafes
   if (!sensorsHealthy() &&

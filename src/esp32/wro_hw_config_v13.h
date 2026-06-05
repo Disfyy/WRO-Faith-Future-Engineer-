@@ -93,14 +93,6 @@
 #define SERVO_RIGHT_US      2000
 
 // ============================================================
-//  8.  Motor speed
-// ============================================================
-#define MOTOR_MAX_SPEED     150
-#define MOTOR_TURN_FAST     120
-#define MOTOR_TURN_SLOW     80
-#define MOTOR_MIN_SPEED     35
-
-// ============================================================
 //  9.  Odometry — AS5600 12-bit
 //
 //   Wheel D=47mm → circumference=147.65mm=14.765cm
@@ -125,31 +117,12 @@
 #define TOF_MAX_VALID_MM    3500     // reject reads above this (out-of-range)
 #define TOF_INVALID_MM      9999     // sentinel for "no valid VL53L1X reading"
 
-// ============================================================
-// 11.  Race & PID defaults
-// ============================================================
-#define TARGET_LAPS         3
-#define LAP_DEGREES         360.0f
-#define FINISH_ZONE_CM      100
-
-#define PID_KP_DEFAULT      0.50f
-#define PID_KI_DEFAULT      0.001f
-#define PID_KD_DEFAULT      0.10f
-#define GYRO_KP_DEFAULT     1.20f
-
-// ============================================================
-// 12.  Timeouts & loop
-// ============================================================
-#define CAMERA_TIMEOUT          500
-#define CAMERA_OFFLINE_STOP_MS  3000
-#define PRINT_INTERVAL          200
-#define LOOP_INTERVAL           10
-#define GYRO_CALIB_SAMPLES      300
-#define FINISH_BLINK_MS         250
-#define ESTOP_DEBOUNCE_MS       20
-#define MAX_IMU_DT_SEC          0.05f
-#define ENCODER_FAIL_STOP       50
-#define SPEED_RAMP_STEP         8
-#define BLIND_TURN_TIMEOUT      3000
-#define BLIND_TURN_ANGLE        85.0f
-#define ENCODER_TURN_TICKS      3000
+// NOTE: v11 leftovers removed in the 2026-06 audit — motor-speed names
+// (MOTOR_MAX_SPEED…), PID/lap defaults (PID_*_DEFAULT, TARGET_LAPS,
+// LAP_DEGREES, FINISH_ZONE_CM, GYRO_KP_DEFAULT) and the old timeout/loop
+// block (CAMERA_TIMEOUT, LOOP_INTERVAL, SPEED_RAMP_STEP, BLIND_TURN_*,
+// ENCODER_TURN_TICKS, …) all lived here AND were redefined (or superseded)
+// in wro_config_v13.h. The v13 firmware uses the wro_config_v13.h versions
+// (OPEN_MAX_PWM/OBS_MAX_PWM, TARGET_LAPS_RACE, GYRO_LAP_DEG, LOOP_INTERVAL_MS,
+// SPEED_RAMP_STEP, ENC_FAIL_LIMIT_V13, …). The only remaining references to
+// the old names are in src/esp32/legacy/, which keep their own copies.

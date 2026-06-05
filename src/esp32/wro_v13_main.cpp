@@ -35,6 +35,7 @@
 #include <esp_task_wdt.h>
 
 #include "wro_config_v13.h"
+#include "wro_i2c_buses.h"
 #include "wro_imu.h"
 #include "wro_odometry.h"
 #include "wro_camera.h"
@@ -126,12 +127,22 @@ void setup() {
   steeringServo.attach(SERVO_PIN, SERVO_LEFT_US, SERVO_RIGHT_US);
   writeSteeringUs(SERVO_CENTER_US);
 
+  // ─── I2C buses (Wire + Wire1) ───────────────────────────────
+  // Bring both buses up explicitly BEFORE any device driver, so the IMU and
+  // VL53L1X no longer depend on the encoder init running first. Idempotent.
+  i2c_buses_init();
+
   // ─── Encoders (AS5600 dual I2C) ─────────────────────────────
+#if ENCODERS_PRESENT
   if (!odo_init()) {
     Serial.println("ERROR: AS5600 init failed (check both I2C buses)");
   } else {
     Serial.println("AS5600 dual I2C: OK");
   }
+#else
+  odo_init();   // probes encoders (ignored this build); buses already up above
+  Serial.println("AS5600 encoders: DISABLED (no-magnet mode) - IMU+camera+ToF only");
+#endif
 
   // ─── VL53L1X distance sensors (owned by wro_sensors) ───────
   sens_init();

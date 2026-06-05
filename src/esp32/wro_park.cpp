@@ -12,6 +12,7 @@ int g_park_phase     = PK_IDLE;
 
 static float         parkTargetYaw    = 0.0f;
 static long          phaseStartTicks  = 0;
+static unsigned long phaseStartMs     = 0;   // no-encoder fallback timing base
 static unsigned long stableSinceMs    = 0;
 static unsigned long camLossSinceMs   = 0;
 static int           bayDir           = +1;   // +1 = bay to the right of robot, -1 left
@@ -31,6 +32,7 @@ void park_init() {
   g_park_speed_pwm = 0;
   parkTargetYaw = 0.0f;
   phaseStartTicks = 0;
+  phaseStartMs = 0;
   stableSinceMs = 0;
   camLossSinceMs = 0;
   bayDir = +1;
@@ -46,6 +48,14 @@ void park_begin(float startYaw) {
 
 bool park_done()    { return g_park_phase == PK_FINAL; }
 bool park_aborted() { return g_park_phase == PK_ABORT; }
+
+void park_shift_clock(unsigned long deltaMs) {
+  // Push every wall-clock anchor forward by the paused duration so elapsed-time
+  // checks resume where they left off instead of jumping ahead.
+  if (phaseStartMs)   phaseStartMs   += deltaMs;
+  if (stableSinceMs)  stableSinceMs  += deltaMs;
+  if (camLossSinceMs) camLossSinceMs += deltaMs;
+}
 
 void park_update(float yaw_deg, float yaw_rate_dps,
                  int tf_front_mm, bool tf_front_ok,
@@ -101,6 +111,7 @@ void park_update(float yaw_deg, float yaw_rate_dps,
         if (stableSinceMs == 0) stableSinceMs = now;
         if (now - stableSinceMs > 200) {
           phaseStartTicks = enc_avg_ticks_signed;
+          phaseStartMs    = now;
           g_park_phase = PK_REV_A;
         }
       } else {
@@ -113,10 +124,16 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       // Reverse while steering INTO the bay direction.
       g_park_steer_us  = (bayDir > 0) ? SERVO_RIGHT_SAFE_US : SERVO_LEFT_SAFE_US;
       g_park_speed_pwm = -PARK_REV_PWM;
+#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;     // reverse distance (positive)
-      if (cm >= PARK_PHASE_A_CM) {
+      bool phaseDone = (cm >= PARK_PHASE_A_CM);
+#else
+      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_A_MS);
+#endif
+      if (phaseDone) {
         phaseStartTicks = enc_avg_ticks_signed;
+        phaseStartMs    = now;
         g_park_phase = PK_REV_B;
       }
       break;
@@ -129,6 +146,7 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       float herr = fabsf(wrap180(parkTargetYaw - yaw_deg));
       if (herr < 5.0f) {
         phaseStartTicks = enc_avg_ticks_signed;
+        phaseStartMs    = now;
         g_park_phase = PK_REV_C;
       }
       break;
@@ -140,10 +158,15 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
       g_park_speed_pwm = -PARK_REV_PWM;
 
+#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;
+      bool phaseDone = (cm >= PARK_PHASE_C_CM);
+#else
+      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_C_MS);
+#endif
       bool frontClear = (tf_front_ok && tf_front_mm > PARK_FRONT_CLEAR_MM);
-      if (cm >= PARK_PHASE_C_CM || frontClear) {
+      if (phaseDone || frontClear) {
         g_park_phase = PK_FINAL;
       }
       break;

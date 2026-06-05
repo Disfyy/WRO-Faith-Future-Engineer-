@@ -26,6 +26,38 @@
 #define HAS_SIDE_TOF   1
 
 // ============================================================
+// 0b. ENCODER PRESENCE  (TEMPORARY — magnet lost 2026-06-05)
+// ============================================================
+//   1 = AS5600 magnets installed → full wheel odometry (normal config).
+//   0 = magnet(s) missing / on order → run WITHOUT encoders:
+//         • the encoder health check no longer gates the race (IMU only),
+//         • Obstacle parking uses TIME-based reverse phases (PARK_PHASE_*_MS)
+//           instead of encoder distance,
+//         • the speed-based brownout proxy is disabled (no speed signal).
+//       Open Challenge is otherwise unaffected: lap counting is gyro-based,
+//       steering is heading/wall-PID, and corners use ToF + gyro — none of
+//       which need the encoders.
+//   NOTE: odo_init() is still called in setup() even when this is 0, because
+//         it is what runs Wire.begin()/Wire1.begin() for the I2C buses that
+//         the IMU and both VL53L1X sensors depend on. Do not remove that call.
+//   >>> SET BACK TO 1 once the replacement magnet is glued and the air-gap is
+//       verified (0.5–3 mm) with bench target 8 (TEST_ENCODERS). <<<
+#define ENCODERS_PRESENT  0
+
+// ============================================================
+// 0c. DEFAULT RACE DIRECTION (fallback until the camera confirms)
+// ============================================================
+//   -1 = CCW (robot drives LEFT from start / counter-clockwise loop)
+//   +1 = CW  (robot drives RIGHT from start / clockwise loop)
+//   The camera locks the true direction from the orange/blue line within the
+//   first few frames; this value is only used until then (e.g. before the
+//   first colored line is visible). SET IT to match your known start
+//   orientation so that if a corner is reached before direction is confirmed,
+//   the robot still turns the right way. The firmware prints a one-shot
+//   "UNCONFIRMED direction" warning over USB if that ever happens.
+#define DEFAULT_RACE_DIRECTION  (-1)
+
+// ============================================================
 // 1.  CORNERING — VL53L1X-front + IMU yaw delta state machine
 // ============================================================
 #define TURN_SLOWDOWN_MM      600    // begin pre-corner slowdown
@@ -94,6 +126,14 @@
 #define PARK_MAGENTA_CONFIRM    5       // frames of magenta before approach
 #define PARK_FRONT_CLEAR_MM     350     // tfFront > this → we are inside the bay
 #define PARK_ALIGN_RATE_DPS     2.0f    // °/s threshold for "stable"
+
+// No-encoder fallback (ENCODERS_PRESENT == 0): reverse phases are TIMED
+// instead of measured by wheel distance. These are rough equivalents of
+// PARK_PHASE_*_CM at PARK_REV_PWM — TUNE ON BENCH with a stopwatch before
+// trusting them on track. (An E-Stop pause mid-reverse is handled: the FSM
+// shifts the parking clock forward by the paused duration on resume.)
+#define PARK_PHASE_A_MS         900     // ≈ PARK_PHASE_A_CM at PARK_REV_PWM
+#define PARK_PHASE_C_MS         1600    // ≈ PARK_PHASE_C_CM at PARK_REV_PWM
 
 // ============================================================
 // 6.  LAP COUNTING
