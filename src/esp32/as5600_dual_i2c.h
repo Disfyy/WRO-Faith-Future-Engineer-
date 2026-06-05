@@ -21,20 +21,18 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "wro_hw_config_v13.h"
+#include "wro_i2c_buses.h"
 
 #define AS5600_REG_ANGLE_H  0x0E
 
-// ─── Bring up both I2C buses with the AS5600s ────────────────
+// ─── Probe both AS5600s ──────────────────────────────────────
+//   Bus bring-up (Wire/Wire1 begin) now lives in i2c_buses_init() so the IMU
+//   and VL53L1X no longer depend on this function running first. We still call
+//   it here (idempotent) so the diag encoder/bench targets keep working when
+//   they call as5600_init() directly.
 //   Returns true if both encoders responded to a status read.
 static inline bool as5600_init() {
-  Wire.begin(I2C0_SDA, I2C0_SCL);
-  Wire.setClock(I2C_FREQ_HZ);
-  Wire.setTimeOut(10);            // ms — fail fast on a wedged bus so the loop
-                                  // degrades via the ENC/IMU fail-limits instead
-                                  // of stalling into a watchdog panic-reset.
-  Wire1.begin(I2C1_SDA, I2C1_SCL);
-  Wire1.setClock(I2C_FREQ_HZ);
-  Wire1.setTimeOut(10);
+  i2c_buses_init();
 
   bool leftOk  = false;
   bool rightOk = false;
