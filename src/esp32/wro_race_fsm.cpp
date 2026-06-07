@@ -45,6 +45,8 @@ static unsigned long lastLapMs    = 0;
 static float lastLapYawTotal      = 0.0f;
 static unsigned long camLineLastSeen = 0;
 static unsigned long brownoutWarnSinceMs = 0;
+static float raceStartYawTotal     = 0.0f;   // g_yaw_total captured at race start (lap baseline)
+static int   lapLastIlaps          = 0;      // monotonic integer-lap high-water, rebased per race
 
 static void enterState(int s) {
   if (g_race_state != s) {
@@ -109,15 +111,14 @@ static void updateLapCounter(unsigned long now) {
   // -> the robot never reached FINISH (Open) or the parking trigger (Obstacle).
   // - lastIlaps is monotonic (never regresses) so a brief back-spin then
   //   forward return can't re-credit the same lap once cooldown expires.
-  float laps  = fabsf(g_yaw_total) / GYRO_LAP_DEG;
+  float laps  = fabsf(g_yaw_total - raceStartYawTotal) / GYRO_LAP_DEG;
   int   ilaps = (int)laps;
-  static int lastIlaps = 0;
-  if (ilaps > lastIlaps && (now - lastLapMs) > LAP_COOLDOWN_MS) {
+  if (ilaps > lapLastIlaps && (now - lastLapMs) > LAP_COOLDOWN_MS) {
     g_lap_count++;
     lastLapMs = now;
     lastLapYawTotal = g_yaw_total;
   }
-  if (ilaps > lastIlaps) lastIlaps = ilaps;
+  if (ilaps > lapLastIlaps) lapLastIlaps = ilaps;
 
   // Sanity-check secondary: camera line bits — accept if gyro fired within grace window.
   bool lineNow = (g_cam.modeFlag & (CAM_FLAG_ORANGE | CAM_FLAG_BLUE)) != 0;
@@ -207,6 +208,8 @@ void race_init() {
   lastLapYawTotal = 0.0f;
   camLineLastSeen = 0;
   brownoutWarnSinceMs = 0;
+  raceStartYawTotal = 0.0f;
+  lapLastIlaps = 0;
   prevRaceState = RS_INIT;
 }
 
@@ -237,7 +240,11 @@ void race_update() {
     case RS_INIT:
       g_cmd_steer_us  = SERVO_CENTER_US;
       g_cmd_speed_pwm = 0;
-      if (sensorsHealthy()) enterState(RS_WAIT_START);
+      // Don't arm without a working front distance sensor: with no front ToF the
+      // corner FSM never commits and the robot drives straight into a wall. This
+      // checks boot success only (not per-frame freshness), so it won't false-
+      // trip mid-race when the wall briefly drops out of the sensor's cone.
+      if (sensorsHealthy() && sens_front_present()) enterState(RS_WAIT_START);
       break;
 
     case RS_WAIT_START:
@@ -249,6 +256,8 @@ void race_update() {
         estop_set_race_active(true);
         odo_reset();
         g_lap_count = 0;
+        raceStartYawTotal = g_yaw_total;   // rebase gyro lap baseline at the real start
+        lapLastIlaps = 0;
         // Snap initial target heading to current yaw (whatever the start orientation is).
         float h0 = snapDeg(g_yaw, 90.0f);
         open_set_target_heading(h0);

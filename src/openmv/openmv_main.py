@@ -157,77 +157,83 @@ def find_dominant(blob_list):
 # ============================================================
 while True:
     clock.tick()
-    img = sensor.snapshot()
+    try:
+        img = sensor.snapshot()
 
-    # Default outputs (6 protocol fields)
-    red_x    = 0;   red_dist   = 999
-    green_x  = 0;   green_dist = 999
-    mode_flag = 0;  extra_tag  = 0
+        # Default outputs (6 protocol fields)
+        red_x    = 0;   red_dist   = 999
+        green_x  = 0;   green_dist = 999
+        mode_flag = 0;  extra_tag  = 0
 
-    # ---------- 1. RED PILLARS (rule 13.21) ----------
-    red_blobs = img.find_blobs([THRESHOLD_RED],
-                               roi=ROI_PILLARS,
-                               pixels_threshold=MIN_PIX_PILLAR,
-                               area_threshold=MIN_PIX_PILLAR,
-                               merge=True)
-    best_red = find_dominant(red_blobs)
-    if best_red:
-        red_x    = best_red.cx() - CENTER_X
-        red_dist = distance_cm(best_red, PILLAR_HEIGHT_CM)
-        img.draw_rectangle(best_red.rect(), color=(255, 50, 50))
-        img.draw_cross(best_red.cx(), best_red.cy(), color=(255, 50, 50))
-        img.draw_string(best_red.x(), best_red.y() - 10,
-                        "R D:%d" % red_dist, color=(255, 50, 50), scale=1)
-
-    # ---------- 2. GREEN PILLARS (rule 13.22) ----------
-    green_blobs = img.find_blobs([THRESHOLD_GREEN],
-                                 roi=ROI_PILLARS,
-                                 pixels_threshold=MIN_PIX_PILLAR,
-                                 area_threshold=MIN_PIX_PILLAR,
-                                 merge=True)
-    best_green = find_dominant(green_blobs)
-    if best_green:
-        green_x    = best_green.cx() - CENTER_X
-        green_dist = distance_cm(best_green, PILLAR_HEIGHT_CM)
-        img.draw_rectangle(best_green.rect(), color=(50, 255, 50))
-        img.draw_cross(best_green.cx(), best_green.cy(), color=(50, 255, 50))
-        img.draw_string(best_green.x(), best_green.y() - 10,
-                        "G D:%d" % green_dist, color=(50, 255, 50), scale=1)
-
-    # ---------- 3. ORANGE / BLUE FLOOR LINES (rule 13.9) ----------
-    if img.find_blobs([THRESHOLD_ORANGE],
-                      roi=ROI_LINES,
-                      pixels_threshold=MIN_PIX_LINE,
-                      merge=True):
-        mode_flag |= 1                       # bit 0 = orange (CW)
-
-    if img.find_blobs([THRESHOLD_BLUE],
-                      roi=ROI_LINES,
-                      pixels_threshold=MIN_PIX_LINE,
-                      merge=True):
-        mode_flag |= 2                       # bit 1 = blue (CCW)
-
-    # ---------- 4. MAGENTA PARKING BLOCK (rule 13.27) ----------
-    magenta_blobs = img.find_blobs([THRESHOLD_MAGENTA],
-                                   roi=ROI_MAGENTA,
-                                   pixels_threshold=MIN_PIX_MAGENTA,
+        # ---------- 1. RED PILLARS (rule 13.21) ----------
+        red_blobs = img.find_blobs([THRESHOLD_RED],
+                                   roi=ROI_PILLARS,
+                                   pixels_threshold=MIN_PIX_PILLAR,
+                                   area_threshold=MIN_PIX_PILLAR,
                                    merge=True)
-    best_magenta = find_dominant(magenta_blobs)
-    if best_magenta:
-        mode_flag |= 4                       # bit 2 = magenta visible
-        extra_tag  = best_magenta.cx() - CENTER_X
-        img.draw_rectangle(best_magenta.rect(), color=(255, 0, 255))
-        img.draw_string(best_magenta.x(), best_magenta.y() - 10,
-                        "MAG", color=(255, 0, 255), scale=1)
+        best_red = find_dominant(red_blobs)
+        if best_red:
+            red_x    = best_red.cx() - CENTER_X
+            red_dist = distance_cm(best_red, PILLAR_HEIGHT_CM)
+            img.draw_rectangle(best_red.rect(), color=(255, 50, 50))
+            img.draw_cross(best_red.cx(), best_red.cy(), color=(255, 50, 50))
+            img.draw_string(best_red.x(), best_red.y() - 10,
+                            "R D:%d" % red_dist, color=(255, 50, 50), scale=1)
 
-    # ---------- 5. UART OUTPUT ----------
-    data_str = "%d,%d,%d,%d,%d,%d" % (red_x, red_dist,
-                                      green_x, green_dist,
-                                      mode_flag, extra_tag)
-    uart.write("%s*%02X\n" % (data_str, calc_checksum(data_str)))
+        # ---------- 2. GREEN PILLARS (rule 13.22) ----------
+        green_blobs = img.find_blobs([THRESHOLD_GREEN],
+                                     roi=ROI_PILLARS,
+                                     pixels_threshold=MIN_PIX_PILLAR,
+                                     area_threshold=MIN_PIX_PILLAR,
+                                     merge=True)
+        best_green = find_dominant(green_blobs)
+        if best_green:
+            green_x    = best_green.cx() - CENTER_X
+            green_dist = distance_cm(best_green, PILLAR_HEIGHT_CM)
+            img.draw_rectangle(best_green.rect(), color=(50, 255, 50))
+            img.draw_cross(best_green.cx(), best_green.cy(), color=(50, 255, 50))
+            img.draw_string(best_green.x(), best_green.y() - 10,
+                            "G D:%d" % green_dist, color=(50, 255, 50), scale=1)
 
-    # LED feedback
-    led_red.on()  if (best_red or best_green) else led_red.off()
-    led_green.on() if (mode_flag & 4)         else led_green.off()
+        # ---------- 3. ORANGE / BLUE FLOOR LINES (rule 13.9) ----------
+        if img.find_blobs([THRESHOLD_ORANGE],
+                          roi=ROI_LINES,
+                          pixels_threshold=MIN_PIX_LINE,
+                          merge=True):
+            mode_flag |= 1                       # bit 0 = orange (CW)
+
+        if img.find_blobs([THRESHOLD_BLUE],
+                          roi=ROI_LINES,
+                          pixels_threshold=MIN_PIX_LINE,
+                          merge=True):
+            mode_flag |= 2                       # bit 1 = blue (CCW)
+
+        # ---------- 4. MAGENTA PARKING BLOCK (rule 13.27) ----------
+        magenta_blobs = img.find_blobs([THRESHOLD_MAGENTA],
+                                       roi=ROI_MAGENTA,
+                                       pixels_threshold=MIN_PIX_MAGENTA,
+                                       merge=True)
+        best_magenta = find_dominant(magenta_blobs)
+        if best_magenta:
+            mode_flag |= 4                       # bit 2 = magenta visible
+            extra_tag  = best_magenta.cx() - CENTER_X
+            img.draw_rectangle(best_magenta.rect(), color=(255, 0, 255))
+            img.draw_string(best_magenta.x(), best_magenta.y() - 10,
+                            "MAG", color=(255, 0, 255), scale=1)
+
+        # ---------- 5. UART OUTPUT ----------
+        data_str = "%d,%d,%d,%d,%d,%d" % (red_x, red_dist,
+                                          green_x, green_dist,
+                                          mode_flag, extra_tag)
+        uart.write("%s*%02X\n" % (data_str, calc_checksum(data_str)))
+
+        # LED feedback
+        led_red.on()  if (best_red or best_green) else led_red.off()
+        led_green.on() if (mode_flag & 4)         else led_green.off()
+    except Exception:
+        # One bad frame must not kill vision. Drop it WITHOUT sending a packet so
+        # a transient glitch is just skipped, but a PERSISTENT failure still goes
+        # silent -> ESP32 hits CAM_SILENT_STOP and SAFE_STOPs (fail-safe).
+        led_red.on(); time.sleep_ms(5); led_red.off()
 
     time.sleep_ms(10)                        # cap at ~50 Hz to match doc

@@ -9,6 +9,7 @@
 void sens_init()       { vl53_initAll(); }
 void sens_update()     { vl53_readAll(); }
 
+bool sens_front_present()      { return tfFront.ok; }   // booted OK (persistent; not per-frame freshness)
 int  sens_tf_front_mm()        { return tfFront.distMM; }
 bool sens_tf_front_ok()        { return tfFront.ok && tfFront.distMM > 0 && tfFront.distMM < TOF_INVALID_MM && (millis() - tfFront.lastRead) < TF_SILENT_MS; }
 int  sens_tf_front_strength()  { return tfFront.strength; }

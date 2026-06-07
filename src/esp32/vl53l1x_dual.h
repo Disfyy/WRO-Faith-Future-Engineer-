@@ -147,6 +147,13 @@ static inline void vl53_read_one(VL53L1Sensor &s) {
     s.distMM = TOF_INVALID_MM;
     return;
   }
+  // Reject low-confidence/saturated returns: the Pololu lib still hands back a
+  // plausible-looking mm on sigma/signal/wraparound failures. Only RangeValid
+  // (status 0) is trustworthy for corner commit / parking decisions.
+  if (s.sensor.ranging_data.range_status != VL53L1X::RangeValid) {
+    s.distMM = TOF_INVALID_MM;
+    return;
+  }
   if (mm == 0 || mm > TOF_MAX_VALID_MM) {
     s.distMM = TOF_INVALID_MM;
     return;

@@ -134,6 +134,8 @@
 // shifts the parking clock forward by the paused duration on resume.)
 #define PARK_PHASE_A_MS         900     // ≈ PARK_PHASE_A_CM at PARK_REV_PWM
 #define PARK_PHASE_C_MS         1600    // ≈ PARK_PHASE_C_CM at PARK_REV_PWM
+#define PARK_PHASE_B_MS         1500    // failsafe cap on REV_B counter-steer if heading never converges (drift/wrong bay)
+#define PARK_APPROACH_MAX_MS    6000    // abort PK_APPROACH if back-wall never detected (dead front ToF / lost marker)
 
 // ============================================================
 // 6.  LAP COUNTING
@@ -157,6 +159,7 @@
 // ============================================================
 #define ENC_FAIL_LIMIT_V13      50      // consecutive read failures → SAFE_STOP
 #define IMU_FAIL_LIMIT          20
+#define IMU_GYRO_MAX_RPS        9.2f    // reject finite gyro spikes beyond ~500 dps full-scale (+margin)
 #define TF_SILENT_MS            1000    // no valid VL53L1X frame this long → block corner detect
 #define CAM_SILENT_DEGRADE_MS   500     // mark camera offline
 #define CAM_SILENT_STOP_MS      3000    // SAFE_STOP in Obstacle if silent this long
