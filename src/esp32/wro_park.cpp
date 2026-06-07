@@ -42,6 +42,7 @@ void park_begin(float startYaw) {
   parkTargetYaw = startYaw;
   g_park_phase = PK_APPROACH;
   phaseStartTicks = 0;
+  phaseStartMs = millis();   // timer base for the PK_APPROACH watchdog (and E-stop re-anchor)
   stableSinceMs = 0;
   camLossSinceMs = 0;
 }
@@ -99,6 +100,10 @@ void park_update(float yaw_deg, float yaw_rate_dps,
         phaseStartTicks = enc_avg_ticks_signed;
         g_park_phase = PK_ALIGN;
         stableSinceMs = 0;
+      } else if (now - phaseStartMs >= PARK_APPROACH_MAX_MS) {
+        // Front ToF never tripped (dead sensor / lost marker): don't creep into
+        // the back wall forever. Abort safely (motor off, FSM declares aborted).
+        g_park_phase = PK_ABORT;
       }
       break;
     }
@@ -144,7 +149,9 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       g_park_steer_us  = (bayDir > 0) ? SERVO_LEFT_SAFE_US : SERVO_RIGHT_SAFE_US;
       g_park_speed_pwm = -PARK_REV_PWM;
       float herr = fabsf(wrap180(parkTargetYaw - yaw_deg));
-      if (herr < 5.0f) {
+      // Failsafe: if heading never converges (IMU drift, wrong bay, wheel slip)
+      // don't reverse indefinitely into a wall — cap the phase by time.
+      if (herr < 5.0f || (now - phaseStartMs >= PARK_PHASE_B_MS)) {
         phaseStartTicks = enc_avg_ticks_signed;
         phaseStartMs    = now;
         g_park_phase = PK_REV_C;

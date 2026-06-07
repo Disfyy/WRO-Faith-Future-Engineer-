@@ -18,6 +18,7 @@
 void  sens_init();        // boots VL53L1X front (+ side if HAS_SIDE_TOF)
 void  sens_update();      // call every loop tick
 
+bool  sens_front_present();   // true if the front VL53L1X booted OK (start-arming gate)
 int   sens_tf_front_mm();
 bool  sens_tf_front_ok();
 int   sens_tf_front_strength();

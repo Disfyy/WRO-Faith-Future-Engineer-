@@ -204,7 +204,9 @@ void loop() {
 
   // ─── Sensor updates (HAL → estimation) ─────────────────────
   imu_update();
-  odo_update();
+#if ENCODERS_PRESENT
+  odo_update();      // skipped in no-encoder mode: avoids 2 wasted I2C reads per tick
+#endif
   sens_update();
   cam_update();
   estop_update();
@@ -214,7 +216,14 @@ void loop() {
 
   // ─── Apply commands to actuators ───────────────────────────
   writeSteeringUs(g_cmd_steer_us);
-  applySpeedRamp(g_cmd_speed_pwm);
+  // SAFE_STOP must cut drive immediately, not coast down through the ramp
+  // (estop.h contract: "motor off immediately, NOT through ramp").
+  if (g_race_state == RS_SAFE_STOP) {
+    commandSpeed = 0;
+    writeMotor(0);
+  } else {
+    applySpeedRamp(g_cmd_speed_pwm);
+  }
 
   // ─── Telemetry (rate-limited internally) ───────────────────
   tlm_update_periodic(g_race_state, g_corner_state, g_lap_count,
