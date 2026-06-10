@@ -3,17 +3,16 @@
  * I2C bus bring-up — single source of truth for both native peripherals.
  *
  * The ESP32-S3 has two hardware I2C controllers: Wire (I2C0, GPIO 8/9) and
- * Wire1 (I2C1, GPIO 11/12). Three driver families share them:
+ * Wire1 (I2C1, GPIO 3/4). Three driver families share them:
  *   I2C0 (Wire):  ICM-20948 IMU + AS5600 Left + VL53L1X Front
  *   I2C1 (Wire1): AS5600 Right + VL53L1X Side
  *
  * Previously the begin()/setClock()/setTimeOut() calls were a side-effect
  * buried inside as5600_init(), so the IMU and BOTH VL53L1X sensors silently
- * depended on the encoder init running first (and in the right order). That
- * coupling is a latent footgun — especially in no-encoder mode, where it is
- * tempting to drop the encoder init entirely. This header makes bus bring-up
- * explicit and order-independent: call i2c_buses_init() once, early in setup(),
- * before any device driver touches a bus.
+ * depended on the encoder init running first (and in the right order). This
+ * header makes bus bring-up explicit and order-independent: call
+ * i2c_buses_init() once, early in setup(), before any device driver touches
+ * a bus.
  *
  * Safe to call from multiple init paths (e.g. main setup() AND as5600_init()):
  * Wire.begin() is itself safe to repeat, and the per-translation-unit once-guard

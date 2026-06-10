@@ -73,7 +73,7 @@ plus `SAFE_STOP` (parallel — entered on E-Stop held / sensor fault, resumes on
 
 ### Key Algorithms (unchanged from v12 architecture)
 - **Cornering owned by VL53L1X front + IMU yaw delta** — camera is NEVER an exit condition (the v11 turn failure was a camera-gated trigger). Trigger: front<350 mm × 3 frames. Exit: 80° gyro delta. Speed during turn: PWM 70.
-- **Pillar PID (Obstacle):** Red → keep right (setpoint +60 px), Green → keep left (-60 px). KP=0.45, KI=0.001, KD=0.30 (EMA-filtered derivative). Reset integral on color switch. Far-pillar pre-position at 0.4× gain.
+- **Pillar PID (Obstacle):** Red → VEHICLE passes on the pillar's RIGHT, so the pillar is held LEFT of image center (setpoint −30 px); Green → vehicle passes LEFT, pillar held RIGHT (+30 px). KP=0.45, KI=0.001, KD=0.30 (EMA-filtered derivative). Reset integral on color switch. Far-pillar pre-position at 0.4× gain. (Camera X spans ±80 px; an earlier doc revision had the sides inverted and ±60 px setpoints.)
 - **Heading-hold (Open):** snap target heading to nearest 90° after each corner exit. KP=12 µs/deg, KD=2.0, KI=0 (drift over 3 min).
 - **Lap counter:** primary = gyro 360° accumulator. Secondary sanity-check = camera line bit with cooldown.
 - **Parallel parking (Obstacle, after lap 3):** APPROACH → ALIGN → 3-phase REVERSE → FINAL. Aborts to FINISH if camera silent.

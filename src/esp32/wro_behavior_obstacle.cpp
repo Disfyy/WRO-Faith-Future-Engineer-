@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "wro_config_v13.h"
 #include "wro_pid.h"
+#include "wro_telemetry.h"   // live-tune globals (g_pid_k*_obs, g_gyro_kp, g_max_pwm_obs)
 #include "wro_behavior_obstacle.h"
 
 static_assert(PILLAR_BLEND_OUT_MS > 0,
@@ -56,6 +57,12 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
   lastUpdateMs = now;
   if (dt <= 0.0f) dt = 0.001f;
 
+  // Live-tunable over USB (P/I/D/G commands in wro_telemetry.cpp).
+  pidPillar.kp  = g_pid_kp_obs;
+  pidPillar.ki  = g_pid_ki_obs;
+  pidPillar.kd  = g_pid_kd_obs;
+  pidHeading.kp = g_gyro_kp;
+
   // Pillar selection: pick the closer of the two visible pillars.
   bool redSeen   = (cam.redDist   < 999) && cam.online;
   bool greenSeen = (cam.greenDist < 999) && cam.online;
@@ -77,18 +84,24 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
   float u = 0.0f;
 
   if (active != 0) {
+    // PASS-SIDE RULE (WRO FE): RED pillar → the VEHICLE passes on the
+    // pillar's RIGHT side, so the pillar must be held LEFT of image center
+    // (negative X setpoint). GREEN → vehicle passes LEFT → pillar held
+    // RIGHT (+). The pre-fix signs were inverted (a misread of "keep
+    // right" as the pillar's image position) and passed every sign on the
+    // penalized side.
     int activeX, setpoint;
-    if (active == 3) { activeX = cam.redX;   setpoint = +PILLAR_OFFSET_PX; }   // red → keep right
-    else             { activeX = cam.greenX; setpoint = -PILLAR_OFFSET_PX; }   // green → keep left
+    if (active == 3) { activeX = cam.redX;   setpoint = -PILLAR_OFFSET_PX; }   // red → hold pillar left, pass right
+    else             { activeX = cam.greenX; setpoint = +PILLAR_OFFSET_PX; }   // green → hold pillar right, pass left
 
     float err = (float)(activeX - setpoint);
     u = pid_step(pidPillar, err, dt);
 
     if (far != 0) {
       int farX = (far == 3) ? cam.redX : cam.greenX;
-      int farSet = (far == 3) ? +PILLAR_OFFSET_PX : -PILLAR_OFFSET_PX;
+      int farSet = (far == 3) ? -PILLAR_OFFSET_PX : +PILLAR_OFFSET_PX;
       float fe = (float)(farX - farSet);
-      u += PILLAR_FAR_GAIN * (PILLAR_KP * fe);    // contribution from the far pillar
+      u += PILLAR_FAR_GAIN * (pidPillar.kp * fe);  // contribution from the far pillar
     }
     noPillarSinceMs = 0;
   } else {
@@ -102,7 +115,9 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
 
     float herr = wrap180(headingTarget - yaw_deg);
     float hu   = pid_step(pidHeading, herr, dt);
-    u = blend * hu;   // blend toward heading-hold; pre-blend baseline is 0
+    // Minus: heading error is in yaw-space (+ = CCW/left) but u is in
+    // servo-space (+ = right). Same convention fix as wro_behavior_open.cpp.
+    u = -(blend * hu);   // blend toward heading-hold; pre-blend baseline is 0
   }
 
   if (u >  PILLAR_OUTPUT_CLAMP_US) u =  PILLAR_OUTPUT_CLAMP_US;
@@ -112,7 +127,7 @@ bool obs_update(float yaw_deg, int tf_front_mm, bool tf_front_ok,
   if (us > SERVO_RIGHT_SAFE_US) us = SERVO_RIGHT_SAFE_US;
   if (us < SERVO_LEFT_SAFE_US)  us = SERVO_LEFT_SAFE_US;
   g_obs_steer_us  = us;
-  g_obs_speed_pwm = OBS_MAX_PWM;
+  g_obs_speed_pwm = g_max_pwm_obs;   // live-tunable over USB ('S+'/'S-')
 
   // Safety override: hard brake if a wall is close (corner FSM hasn't taken over yet).
   bool brakeNow = false;

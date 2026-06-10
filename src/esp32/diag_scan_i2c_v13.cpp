@@ -8,7 +8,7 @@
  * v13 has TWO I2C buses:
  *   I2C0 (Wire,  GPIO 8/9):   ICM-20948 (0x68) + AS5600 Left (0x36) +
  *                              VL53L1X Front (0x30 after boot, 0x29 before)
- *   I2C1 (Wire1, GPIO 11/12): AS5600 Right (0x36) +
+ *   I2C1 (Wire1, GPIO 3/4):   AS5600 Right (0x36) +
  *                              VL53L1X Side  (0x31 after boot, 0x29 before)
  *
  * Run this BEFORE any other v13 test — confirms the wiring before the
@@ -17,6 +17,7 @@
  * the wrong board.
  */
 
+#include <Arduino.h>
 #include <Wire.h>
 #include "wro_hw_config_v13.h"
 
@@ -56,6 +57,14 @@ void setup() {
   Serial.print(" SCL=GPIO"); Serial.println(I2C0_SCL);
   Serial.print("I2C1 SDA=GPIO"); Serial.print(I2C1_SDA);
   Serial.print(" SCL=GPIO"); Serial.println(I2C1_SCL);
+
+  // Wake both VL53L1X by driving their XSHUT pins HIGH. The scanner doesn't run
+  // the full address-remap dance, but if XSHUT is wired to a GPIO (not tied to
+  // 3V3) the sensor sits in shutdown and never ACKs — so it won't appear even
+  // when correctly wired. Enable them here so the scan reflects reality.
+  pinMode(VL53L1X_FRONT_XSHUT, OUTPUT); digitalWrite(VL53L1X_FRONT_XSHUT, HIGH);
+  pinMode(VL53L1X_SIDE_XSHUT,  OUTPUT); digitalWrite(VL53L1X_SIDE_XSHUT,  HIGH);
+  delay(20);   // VL53L1X boot time
 
   Wire.begin (I2C0_SDA, I2C0_SCL);  Wire.setClock(I2C_FREQ_HZ);
   Wire1.begin(I2C1_SDA, I2C1_SCL);  Wire1.setClock(I2C_FREQ_HZ);

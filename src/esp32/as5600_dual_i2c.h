@@ -9,7 +9,7 @@
  *
  * Wiring:
  *   Left  encoder → I2C0 (Wire):  SDA=GPIO8,  SCL=GPIO9
- *   Right encoder → I2C1 (Wire1): SDA=GPIO11, SCL=GPIO12
+ *   Right encoder → I2C1 (Wire1): SDA=GPIO3,  SCL=GPIO4
  *
  * Protocol:
  *   ANGLE register pair at 0x0E/0x0F (high byte first, 12-bit value).

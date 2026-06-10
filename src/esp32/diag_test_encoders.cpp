@@ -7,7 +7,7 @@
  *
  * Wiring:
  *   Left  encoder → I2C0 (Wire):  SDA=GPIO8,  SCL=GPIO9
- *   Right encoder → I2C1 (Wire1): SDA=GPIO11, SCL=GPIO12
+ *   Right encoder → I2C1 (Wire1): SDA=GPIO3,  SCL=GPIO4
  *
  * Both encoders use the same fixed I2C address (0x36); the dual-bus split
  * is what avoids a collision (no TCA9548A needed).

@@ -22,12 +22,11 @@ static unsigned long lastImuMs = 0;
 static int   failStreak   = 0;
 
 bool imu_init() {
-  // I2C0 (Wire) is shared with AS5600 Left + VL53L1X Front. Bus init lives in
-  // as5600_init() (called from odo_init() earlier in setup()): it does
-  // Wire.begin(I2C0_SDA, I2C0_SCL) + Wire.setClock(I2C_FREQ_HZ) before any
-  // other I2C0 device touches the bus. Don't duplicate that here — if init
-  // order ever changes, fix it at the call site, not by re-init'ing the bus
-  // from every driver.
+  // I2C0 (Wire) is shared with AS5600 Left + VL53L1X Front. Bus bring-up
+  // lives in i2c_buses_init() (wro_i2c_buses.h), called at the top of
+  // setup() before any device driver. Don't duplicate it here — if init
+  // order ever changes, fix it at the call site, not by re-init'ing the
+  // bus from every driver.
   if (!icm.begin_I2C(ICM20948_ADDRESS, &Wire)) {
     g_imu_ok = false;
     return false;
@@ -86,7 +85,7 @@ void imu_update() {
   if (!isfinite(omegaZ) || fabsf(omegaZ) > IMU_GYRO_MAX_RPS) {
     // Reject NaN/Inf AND finite-but-impossible spikes (beyond the ±500 dps
     // full-scale + margin). A single bad sample would otherwise poison
-    // g_yaw/g_yaw_total forever — fatal in no-encoder mode (IMU is sole ref).
+    // g_yaw/g_yaw_total forever.
     g_yaw_rate = 0.0f;
     if (++failStreak >= IMU_FAIL_LIMIT) g_imu_ok = false;
     return;

@@ -133,9 +133,9 @@ void handleCmd(const char *cmd) {
   if      (strcmp(cmd, "s") == 0) printStatus();
   else if (strcmp(cmd, "m") == 0) motorFwd(120, 2000);
   else if (strcmp(cmd, "r") == 0) motorRev(120, 2000);
-  else if (strcmp(cmd, "l") == 0) { steeringServo.write(SERVO_MAX_LEFT);  Serial.println("Servo LEFT");   }
-  else if (strcmp(cmd, "c") == 0) { steeringServo.write(SERVO_CENTER);    Serial.println("Servo CENTER"); }
-  else if (strcmp(cmd, "k") == 0) { steeringServo.write(SERVO_MAX_RIGHT); Serial.println("Servo RIGHT");  }
+  else if (strcmp(cmd, "l") == 0) { steeringServo.writeMicroseconds(SERVO_LEFT_US);  Serial.println("Servo LEFT");   }
+  else if (strcmp(cmd, "c") == 0) { steeringServo.writeMicroseconds(SERVO_CENTER_US);    Serial.println("Servo CENTER"); }
+  else if (strcmp(cmd, "k") == 0) { steeringServo.writeMicroseconds(SERVO_RIGHT_US); Serial.println("Servo RIGHT");  }
   else if (strcmp(cmd, "e") == 0) { liveMode = !liveMode; Serial.print("Live: "); Serial.println(liveMode ? "ON" : "OFF"); }
   else if (strcmp(cmd, "h") == 0) printHelp();
   else { Serial.print("Unknown: "); Serial.println(cmd); }
@@ -172,8 +172,9 @@ void setup() {
   pinMode(MOTOR_R_EN, OUTPUT); digitalWrite(MOTOR_R_EN, HIGH);
   pinMode(MOTOR_L_EN, OUTPUT); digitalWrite(MOTOR_L_EN, HIGH);
 
-  steeringServo.attach(SERVO_PIN);
-  steeringServo.write(SERVO_CENTER);
+  steeringServo.setPeriodHertz(50);
+  steeringServo.attach(SERVO_PIN, SERVO_LEFT_US, SERVO_RIGHT_US);
+  steeringServo.writeMicroseconds(SERVO_CENTER_US);
 
   Serial.println();
   printHelp();

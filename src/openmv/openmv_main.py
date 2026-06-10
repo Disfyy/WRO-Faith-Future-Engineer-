@@ -165,6 +165,13 @@ while True:
         green_x  = 0;   green_dist = 999
         mode_flag = 0;  extra_tag  = 0
 
+        # NOTE: ALL find_blobs() searches run BEFORE any draw_*() call.
+        # Overlays are painted into the same framebuffer that find_blobs
+        # reads, so drawing first poisons later searches — e.g. the red
+        # rectangle (a~74) around a near pillar lands inside ROI_LINES and
+        # sits ~4 LAB units from THRESHOLD_ORANGE's a-max: one "tune on
+        # track" widening away from asserting a phantom orange line.
+
         # ---------- 1. RED PILLARS (rule 13.21) ----------
         red_blobs = img.find_blobs([THRESHOLD_RED],
                                    roi=ROI_PILLARS,
@@ -175,10 +182,6 @@ while True:
         if best_red:
             red_x    = best_red.cx() - CENTER_X
             red_dist = distance_cm(best_red, PILLAR_HEIGHT_CM)
-            img.draw_rectangle(best_red.rect(), color=(255, 50, 50))
-            img.draw_cross(best_red.cx(), best_red.cy(), color=(255, 50, 50))
-            img.draw_string(best_red.x(), best_red.y() - 10,
-                            "R D:%d" % red_dist, color=(255, 50, 50), scale=1)
 
         # ---------- 2. GREEN PILLARS (rule 13.22) ----------
         green_blobs = img.find_blobs([THRESHOLD_GREEN],
@@ -190,10 +193,6 @@ while True:
         if best_green:
             green_x    = best_green.cx() - CENTER_X
             green_dist = distance_cm(best_green, PILLAR_HEIGHT_CM)
-            img.draw_rectangle(best_green.rect(), color=(50, 255, 50))
-            img.draw_cross(best_green.cx(), best_green.cy(), color=(50, 255, 50))
-            img.draw_string(best_green.x(), best_green.y() - 10,
-                            "G D:%d" % green_dist, color=(50, 255, 50), scale=1)
 
         # ---------- 3. ORANGE / BLUE FLOOR LINES (rule 13.9) ----------
         if img.find_blobs([THRESHOLD_ORANGE],
@@ -217,11 +216,24 @@ while True:
         if best_magenta:
             mode_flag |= 4                       # bit 2 = magenta visible
             extra_tag  = best_magenta.cx() - CENTER_X
+
+        # ---------- 5. DEBUG OVERLAYS (IDE preview only; AFTER all searches) ----------
+        if best_red:
+            img.draw_rectangle(best_red.rect(), color=(255, 50, 50))
+            img.draw_cross(best_red.cx(), best_red.cy(), color=(255, 50, 50))
+            img.draw_string(best_red.x(), best_red.y() - 10,
+                            "R D:%d" % red_dist, color=(255, 50, 50), scale=1)
+        if best_green:
+            img.draw_rectangle(best_green.rect(), color=(50, 255, 50))
+            img.draw_cross(best_green.cx(), best_green.cy(), color=(50, 255, 50))
+            img.draw_string(best_green.x(), best_green.y() - 10,
+                            "G D:%d" % green_dist, color=(50, 255, 50), scale=1)
+        if best_magenta:
             img.draw_rectangle(best_magenta.rect(), color=(255, 0, 255))
             img.draw_string(best_magenta.x(), best_magenta.y() - 10,
                             "MAG", color=(255, 0, 255), scale=1)
 
-        # ---------- 5. UART OUTPUT ----------
+        # ---------- 6. UART OUTPUT ----------
         data_str = "%d,%d,%d,%d,%d,%d" % (red_x, red_dist,
                                           green_x, green_dist,
                                           mode_flag, extra_tag)

@@ -7,20 +7,21 @@
 //      The TCA9548A I2C mux that v11 used is gone (it burned out); two AS5600s
 //      now share the load across the two native I2C peripherals on the S3.
 //
-// Targets 1, 3-7 are ARCHIVED v11 — sources moved to src/esp32/legacy/
+// Targets 1, 4-6 are ARCHIVED v11 — sources moved to src/esp32/legacy/
 // (Arduino IDE does not auto-include subfolders, so these targets won't
 // link in the active build). See src/esp32/legacy/README.md for how to
 // resurrect one. The v13 active path is target 11 (WRO_TARGET_V13_MAIN).
-// v13-compatible bench/test targets: 2 (SCAN_I2C), 8 (TEST_ENCODERS),
+// v13-compatible bench/test targets: 2 (SCAN_I2C), 3 (MOTOR_SERVO, v11 code
+// via root shim), 7 (SERVO_CAL, v13 port), 8 (TEST_ENCODERS),
 // 9 (TEST_VL53L1X), 10 (BENCH_TEST).
 
 #define WRO_TARGET_EPS323                  1   // ARCHIVED v11 — legacy/legacy_eps323.cpp
 #define WRO_TARGET_SCAN_I2C                2   // v13 — diag_scan_i2c_v13.cpp (both buses)
-#define WRO_TARGET_TEST_MOTOR_SERVO_DRIVE  3   // ARCHIVED v11 — legacy/legacy_test_motor_servo_drive.cpp
+#define WRO_TARGET_TEST_MOTOR_SERVO_DRIVE  3   // v11 code, buildable — target_test_motor_servo_drive.cpp (root shim → legacy/)
 #define WRO_TARGET_TEST_NO_SENSORS         4   // ARCHIVED v11 — legacy/legacy_test_no_sensors.cpp
 #define WRO_TARGET_TEST_SERVO              5   // ARCHIVED v11 — legacy/legacy_test_servo.cpp
 #define WRO_TARGET_TEST_SHORT_SEQUENCE     6   // ARCHIVED v11 — legacy/legacy_test_short_sequence.cpp
-#define WRO_TARGET_TEST_SERVO_CAL          7   // ARCHIVED v11 — legacy/legacy_test_servo_calibrate.cpp (needs v13 port)
+#define WRO_TARGET_TEST_SERVO_CAL          7   // v13 — diag_test_servo_calibrate_v13.cpp
 #define WRO_TARGET_TEST_ENCODERS           8   // v13 — diag_test_encoders.cpp (AS5600 dual I2C)
 #define WRO_TARGET_TEST_VL53L1X            9   // v13 — diag_test_vl53l1x.cpp
 #define WRO_TARGET_BENCH_TEST              10  // v13 — diag_bench_test_v13.cpp
@@ -29,11 +30,11 @@
 // ── Active target — edit only this single #define line ────────
 //   1  EPS323                  LEGACY v11 (reference only)
 //   2  SCAN_I2C                v13 (both I2C buses: IMU + AS5600 + VL53L1X)
-//   3  TEST_MOTOR_SERVO_DRIVE  LEGACY v11
+//   3  TEST_MOTOR_SERVO_DRIVE  v11 code via root shim (drivetrain bring-up)
 //   4  TEST_NO_SENSORS         LEGACY v11
 //   5  TEST_SERVO              LEGACY v11
 //   6  TEST_SHORT_SEQUENCE     LEGACY v11
-//   7  TEST_SERVO_CAL          LEGACY v11 (v13 port pending)
+//   7  TEST_SERVO_CAL          v13 (steering servo calibration)
 //   8  TEST_ENCODERS           v13 (AS5600 on dual I2C)
 //   9  TEST_VL53L1X            v13 (VL53L1X with XSHUT addr remap)
 //  10  BENCH_TEST              v13 (all sensors + actuators)

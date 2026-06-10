@@ -12,7 +12,7 @@ int g_park_phase     = PK_IDLE;
 
 static float         parkTargetYaw    = 0.0f;
 static long          phaseStartTicks  = 0;
-static unsigned long phaseStartMs     = 0;   // no-encoder fallback timing base
+static unsigned long phaseStartMs     = 0;   // anchor for safety-timeout failsafes (PARK_APPROACH_MAX_MS, etc.)
 static unsigned long stableSinceMs    = 0;
 static unsigned long camLossSinceMs   = 0;
 static int           bayDir           = +1;   // +1 = bay to the right of robot, -1 left
@@ -83,9 +83,11 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       break;
 
     case PK_APPROACH: {
-      // Heading-hold while creeping forward; stop at back-wall or when bay is clearly visible.
+      // Heading-hold while creeping FORWARD; stop at back-wall or when bay is
+      // clearly visible. MINUS sign: heading error is yaw-space (+ = CCW/left)
+      // but servo µs is + = right — same convention as wro_behavior_open.cpp.
       float herr = wrap180(parkTargetYaw - yaw_deg);
-      g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
+      g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US - HEADING_KP * herr));
       g_park_speed_pwm = PARK_APPROACH_PWM;
 
       // Decide bay side from magenta X. `cam.extraTag` carries the magenta
@@ -93,11 +95,14 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       // center-relative; see openmv_main.py and docs/guides/WRO_OpenMV_UART_Protocol.md).
       // Negative = block left of center → bay to the LEFT  (bayDir = -1).
       // Positive = block right of center → bay to the RIGHT (bayDir = +1).
-      if (magenta) bayDir = (cam.extraTag >= 0) ? +1 : -1;
+      // Dead-center (extraTag == 0) keeps the LAST decided side instead of
+      // defaulting right by coin flip; the marker de-centers as we approach.
+      if (magenta && cam.extraTag != 0) bayDir = (cam.extraTag > 0) ? +1 : -1;
 
       bool nearBackWall = (tf_front_ok && tf_front_mm > 0 && tf_front_mm < 250);
       if (nearBackWall) {
         phaseStartTicks = enc_avg_ticks_signed;
+        phaseStartMs    = now;          // PK_ALIGN timeout anchor
         g_park_phase = PK_ALIGN;
         stableSinceMs = 0;
       } else if (now - phaseStartMs >= PARK_APPROACH_MAX_MS) {
@@ -122,6 +127,16 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       } else {
         stableSinceMs = 0;
       }
+      // Timeout: if gyro bias has drifted since boot (thermal, 3-min run) the
+      // stationary yaw-rate may never read < PARK_ALIGN_RATE_DPS — every other
+      // phase has a cap; without this one the robot sits motionless here until
+      // the match clock runs out. Proceeding scores better than idling.
+      if (g_park_phase == PK_ALIGN && now - phaseStartMs >= PARK_ALIGN_MAX_MS) {
+        Serial.println("WARN: PK_ALIGN timeout (gyro never settled) - reversing anyway");
+        phaseStartTicks = enc_avg_ticks_signed;
+        phaseStartMs    = now;
+        g_park_phase = PK_REV_A;
+      }
       break;
     }
 
@@ -129,14 +144,9 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       // Reverse while steering INTO the bay direction.
       g_park_steer_us  = (bayDir > 0) ? SERVO_RIGHT_SAFE_US : SERVO_LEFT_SAFE_US;
       g_park_speed_pwm = -PARK_REV_PWM;
-#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;     // reverse distance (positive)
-      bool phaseDone = (cm >= PARK_PHASE_A_CM);
-#else
-      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_A_MS);
-#endif
-      if (phaseDone) {
+      if (cm >= PARK_PHASE_A_CM) {
         phaseStartTicks = enc_avg_ticks_signed;
         phaseStartMs    = now;
         g_park_phase = PK_REV_B;
@@ -161,19 +171,17 @@ void park_update(float yaw_deg, float yaw_rate_dps,
 
     case PK_REV_C: {
       // Straight back until total reverse > PARK_PHASE_C_CM OR front clears.
+      // PLUS sign is CORRECT here (unlike PK_APPROACH): when REVERSING,
+      // wheels-right swings the nose left → yaw INCREASES, so the forward
+      // steering↔yaw relation is inverted and `+` is the stable sign.
       float herr = wrap180(parkTargetYaw - yaw_deg);
       g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
       g_park_speed_pwm = -PARK_REV_PWM;
 
-#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;
-      bool phaseDone = (cm >= PARK_PHASE_C_CM);
-#else
-      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_C_MS);
-#endif
       bool frontClear = (tf_front_ok && tf_front_mm > PARK_FRONT_CLEAR_MM);
-      if (phaseDone || frontClear) {
+      if (cm >= PARK_PHASE_C_CM || frontClear) {
         g_park_phase = PK_FINAL;
       }
       break;

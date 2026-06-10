@@ -19,9 +19,9 @@
 // ============================================================================
 
 /* [Diametric magnet — measure yours] */
-MAGNET_D       = 6.0;   // nominal 6mm cylindrical diametric magnet
-MAGNET_T       = 2.5;   // magnet thickness
-MAGNET_FIT     = 0.15;  // clearance added (0.10 = tight, 0.20 = loose-glue)
+MAGNET_D       = 4.0;   // our magnet: 4mm cylindrical diametric (datasheet nominal is 6mm)
+MAGNET_T       = 2.0;   // magnet thickness
+MAGNET_FIT     = 0.30;  // clearance added (0.10 = tight, 0.20 = loose-glue, 0.30 = drop-in for glue)
 
 /* [Adapter disc] */
 DISC_OD        = 12.0;  // overall outer diameter — fits over wheel center
@@ -69,11 +69,18 @@ module adapter() {
 }
 
 module knurl_ring() {
+    // Grip ridges must STRADDLE the disc OD: embedded ~0.6 mm into the body so
+    // the union is a solid overlap (watertight), and protruding KNURL_DEPTH past
+    // the OD as the actual grip texture. Teeth that merely touch the OD tangent
+    // produce zero-width slivers → non-manifold edges that some slicers choke on.
+    embed = 0.6;                                    // solid overlap into the disc
+    width = embed + KNURL_DEPTH;                     // total radial extent of tooth
+    cx    = DISC_OD/2 - embed/2 + KNURL_DEPTH/2;     // peak lands at OD/2 + KNURL_DEPTH
     for (i = [0:KNURL_TEETH-1]) {
         angle = i * 360 / KNURL_TEETH;
         rotate([0, 0, angle])
-            translate([DISC_OD/2 - KNURL_DEPTH/2, 0, DISC_T/2])
-            cube([KNURL_DEPTH, 0.8, DISC_T - 0.6], center=true);
+            translate([cx, 0, DISC_T/2])
+            cube([width, 0.8, DISC_T - 0.6], center=true);
     }
 }
 
@@ -94,7 +101,9 @@ module ghost_magnet() {
 
 // ============================================================================
 adapter();
-if (SHOW_MAGNET) ghost_magnet();
+// $preview is true in F5/PNG preview, false during F6/STL render — so the ghost
+// magnet is shown for visualization but NEVER baked into the exported STL.
+if (SHOW_MAGNET && $preview) ghost_magnet();
 
 // ============================================================================
 //  USAGE

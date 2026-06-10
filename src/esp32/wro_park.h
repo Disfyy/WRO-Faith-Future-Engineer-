@@ -35,10 +35,11 @@ enum ParkPhase {
 void  park_init();
 void  park_begin(float startYaw);
 
-// Re-anchor the parking wall-clock timers forward by deltaMs. Call on resume
-// from an E-Stop pause so TIME-based reverse phases (no-encoder mode) don't end
-// early because millis() advanced while parking was suspended. Harmless when
-// encoders are present (those phases are distance-based).
+// Re-anchor the parking safety-timeout clocks forward by deltaMs. Call on
+// resume from an E-Stop pause so PARK_APPROACH_MAX_MS / PARK_ALIGN_MAX_MS /
+// PARK_PHASE_B_MS don't fire prematurely because millis() advanced while
+// parking was suspended. (Phase completion is encoder-distance based, so
+// the actual maneuver length is unaffected.)
 void  park_shift_clock(unsigned long deltaMs);
 
 // Returns true when parking is complete or aborted (race FSM should transition).

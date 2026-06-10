@@ -19,13 +19,31 @@ static bool          releasedAfterHold = false;    // single-shot edge during ra
 void estop_init() {
   pinMode(ESTOP_PIN, INPUT_PULLUP);
   bootMs = millis();
+#if ESTOP_BYPASS_AUTOSTART
+  Serial.println("##########################################################");
+  Serial.println("## WARNING: E-STOP BYPASSED + AUTO-START IN 5 s         ##");
+  Serial.println("## BENCH ONLY - wheels OFF the ground!                   ##");
+  Serial.println("## Set ESTOP_BYPASS_AUTOSTART 0 before any real run.    ##");
+  Serial.println("##########################################################");
+#endif
 }
 
 void estop_set_race_active(bool active) { raceActive = active; }
 
 void estop_update() {
   unsigned long now = millis();
+#if ESTOP_BYPASS_AUTOSTART
+  // BENCH-ONLY: button not wired — pretend it is never pressed, and fire a
+  // start request 5 s after boot so the FSM can be exercised hands-free.
+  bool reading = false;
+  static bool autoStarted = false;
+  if (!raceActive && !autoStarted && now - bootMs > 5000) {
+    autoStarted = true;
+    startRequested = true;
+  }
+#else
   bool reading = (digitalRead(ESTOP_PIN) == LOW);
+#endif
 
   // Boot grace
   if (now - bootMs < ESTOP_BOOT_GRACE_MS) {
