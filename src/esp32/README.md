@@ -28,11 +28,11 @@ compiles. To switch targets, edit one line in `wro_build_target.h`:
 |---:|---|---|---|
 |  1 | `legacy/legacy_eps323.cpp` | LEGACY v11 | Original v11 race firmware (archived) |
 |  2 | [`diag_scan_i2c_v13.cpp`](diag_scan_i2c_v13.cpp) | Diagnostic | Scan both I2C buses, list every address found |
-|  3 | `legacy/legacy_test_motor_servo_drive.cpp` | LEGACY v11 | Drivetrain bring-up (archived) |
+|  3 | [`target_test_motor_servo_drive.cpp`](target_test_motor_servo_drive.cpp) | Diagnostic | Drivetrain bring-up (v11 code via root shim → `legacy/`) |
 |  4 | `legacy/legacy_test_no_sensors.cpp` | LEGACY v11 | Open-loop timed lap (archived) |
 |  5 | `legacy/legacy_test_servo.cpp` | LEGACY v11 | Servo sweep (archived) |
 |  6 | `legacy/legacy_test_short_sequence.cpp` | LEGACY v11 | Short pattern (archived) |
-|  7 | `legacy/legacy_test_servo_calibrate.cpp` | LEGACY v11 | Servo calibrate (archived, v13 port pending) |
+|  7 | [`diag_test_servo_calibrate_v13.cpp`](diag_test_servo_calibrate_v13.cpp) | Diagnostic | Interactive steering-servo µs calibration (center / end-stops) |
 |  8 | [`diag_test_encoders.cpp`](diag_test_encoders.cpp) | Diagnostic | 2× AS5600 on dual I2C — tick accumulation |
 |  9 | [`diag_test_vl53l1x.cpp`](diag_test_vl53l1x.cpp) | Diagnostic | 2× VL53L1X with XSHUT address remap |
 | 10 | [`diag_bench_test_v13.cpp`](diag_bench_test_v13.cpp) | Diagnostic | Full hardware sanity (IMU + encoders + ToF + servo + motor + camera + E-Stop) |
@@ -67,7 +67,9 @@ Install via Arduino IDE Library Manager:
 - `ESP32Servo`
 - `VL53L1X` by **Pololu** (not the ST/Adafruit forks — the API differs)
 
-Board: **ESP32-S3 Dev Module** (Arduino-ESP32 v2.0.14 or newer).
+Board: **ESP32-S3 Dev Module** (Arduino-ESP32 core **v3.x** required — the
+firmware uses the IDF 5 task-watchdog API (`esp_task_wdt_config_t` /
+`esp_task_wdt_reconfigure`) and `ledcAttach`, which do not exist in 2.x).
 
 ## See also
 
