@@ -9,8 +9,9 @@
 #include "wro_telemetry.h"
 #include "wro_sensors.h"
 
-// Live-tunable gains (extern declared in main; defined as globals so
-// race FSM and behaviors can read them at runtime).
+// Live-tunable gains (extern declared in wro_telemetry.h; the behavior
+// modules re-read them every update tick, so the serial commands below
+// take effect immediately without a recompile).
 float  g_pid_kp_obs   = PILLAR_KP;
 float  g_pid_ki_obs   = PILLAR_KI;
 float  g_pid_kd_obs   = PILLAR_KD;
@@ -51,6 +52,12 @@ static void handleCommand(const char *line) {
     case 'S':
       if (line[1] == '+') { g_max_pwm_obs += 5; g_max_pwm_open += 5; }
       if (line[1] == '-') { g_max_pwm_obs -= 5; g_max_pwm_open -= 5; }
+      // Keep within [deadband, 8-bit PWM]: repeated 'S-' must not go
+      // negative (negative = reverse on the straights!).
+      if (g_max_pwm_obs  < MIN_DRIVE_PWM) g_max_pwm_obs  = MIN_DRIVE_PWM;
+      if (g_max_pwm_open < MIN_DRIVE_PWM) g_max_pwm_open = MIN_DRIVE_PWM;
+      if (g_max_pwm_obs  > 255) g_max_pwm_obs  = 255;
+      if (g_max_pwm_open > 255) g_max_pwm_open = 255;
       Serial.printf("PWM open=%d obs=%d\n", g_max_pwm_open, g_max_pwm_obs);
       break;
     case '?':

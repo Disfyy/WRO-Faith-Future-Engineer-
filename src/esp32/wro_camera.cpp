@@ -68,13 +68,22 @@ static bool parseFrame(const char *line, uint8_t len) {
   // to/from "not seen" (999), since that's a legitimate visibility flip.
   bool redJump   = (prevRedDist   != 999 && rd != 999 && abs(rd - prevRedDist)   > CAM_DIST_JUMP_MAX_CM);
   bool greenJump = (prevGreenDist != 999 && gd != 999 && abs(gd - prevGreenDist) > CAM_DIST_JUMP_MAX_CM);
+
+  // ALWAYS advance the jump reference, even on a rejected frame. A real,
+  // sustained scene change (blob handoff from a near pillar to a far one
+  // while both stay visible) then costs exactly ONE dropped frame instead
+  // of deadlocking against a stale prev — which used to discard every
+  // subsequent frame (lines + magenta included) until the camera was
+  // declared offline and Obstacle mode SAFE_STOPped. A true single-frame
+  // XOR collision is still rejected below, and the next genuine frame
+  // jumps right back and is accepted.
+  prevRedDist   = rd;
+  prevGreenDist = gd;
+
   if (redJump || greenJump) {
     g_cam.framesRejected++;
     return false;
   }
-
-  prevRedDist   = rd;
-  prevGreenDist = gd;
 
   g_cam.redX       = rx;
   g_cam.redDist    = rd;

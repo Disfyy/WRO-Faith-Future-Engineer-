@@ -29,7 +29,6 @@
  */
 
 #include <Arduino.h>
-#include <ESP32Servo.h>
 #include <WiFi.h>
 #include <esp_bt.h>
 #include <esp_task_wdt.h>
@@ -48,8 +47,6 @@
 #include "wro_race_fsm.h"
 #include "wro_sensors.h"
 
-static Servo steeringServo;
-
 static int  commandSpeed = 0;        // ramped actual PWM (signed)
 static unsigned long lastLoopMs = 0;
 
@@ -57,7 +54,11 @@ static unsigned long lastLoopMs = 0;
 static void writeSteeringUs(int us) {
   if (us > SERVO_RIGHT_SAFE_US) us = SERVO_RIGHT_SAFE_US;
   if (us < SERVO_LEFT_SAFE_US)  us = SERVO_LEFT_SAFE_US;
-  steeringServo.writeMicroseconds(us);
+  
+  // Convert µs to 14-bit duty cycle for 50Hz PWM (20000 µs period)
+  // duty = (us * 16384) / 20000
+  uint32_t duty = (us * 16384) / 20000;
+  ledcWrite(SERVO_PIN, duty);
 }
 
 // ─── Motor: BTS7960 LEDC PWM, signed speed ────────────────────
@@ -106,30 +107,29 @@ void setup() {
   Serial.println("============================================================");
 
   // ─── E-Stop input (early so any held-button bug is grace-windowed) ──
+  Serial.println("CHK: estop_init");
   estop_init();
 
   // ─── Status LED ─────────────────────────────────────────────
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
+  // ─── Steering servo ─────────────────────────────────────────
+  ledcAttach(SERVO_PIN, 50, 14);       // 50 Hz, 14-bit resolution
+  writeSteeringUs(SERVO_CENTER_US);
+
   // ─── Motor driver pins ──────────────────────────────────────
   pinMode(MOTOR_R_EN, OUTPUT);
   pinMode(MOTOR_L_EN, OUTPUT);
   digitalWrite(MOTOR_R_EN, HIGH);
   digitalWrite(MOTOR_L_EN, HIGH);
+  
   ledcAttach(MOTOR_R_PWM, 20000, 8);   // 20 kHz, 8-bit (0..255)
   ledcAttach(MOTOR_L_PWM, 20000, 8);
   ledcWrite(MOTOR_R_PWM, 0);
   ledcWrite(MOTOR_L_PWM, 0);
 
-  // ─── Steering servo ─────────────────────────────────────────
-  steeringServo.setPeriodHertz(50);
-  steeringServo.attach(SERVO_PIN, SERVO_LEFT_US, SERVO_RIGHT_US);
-  writeSteeringUs(SERVO_CENTER_US);
-
   // ─── I2C buses (Wire + Wire1) ───────────────────────────────
-  // Bring both buses up explicitly BEFORE any device driver, so the IMU and
-  // VL53L1X no longer depend on the encoder init running first. Idempotent.
   i2c_buses_init();
 
   // ─── Encoders (AS5600 dual I2C) ─────────────────────────────
@@ -161,8 +161,21 @@ void setup() {
   } else {
     Serial.println("ICM-20948 IMU: OK");
   }
-  if (!imu_calibrate_gyro()) {
-    Serial.println("WARN: gyro calibration weak — continuing anyway");
+  // Gyro bias calibration. A failed calibration leaves bias = 0, which in
+  // no-encoder mode (IMU is the only reference) means 30–120°/min of yaw
+  // drift — retry before giving up, and be loud if it still fails.
+  {
+    bool gyroCalOk = false;
+    for (int attempt = 1; attempt <= 3 && !gyroCalOk; attempt++) {
+      gyroCalOk = imu_calibrate_gyro();
+      if (!gyroCalOk) {
+        Serial.printf("WARN: gyro calibration weak (attempt %d/3) - retrying; keep the robot STILL\n", attempt);
+      }
+    }
+    if (!gyroCalOk) {
+      Serial.println("WARN: gyro calibration FAILED after 3 attempts - yaw will drift!");
+      Serial.println("WARN: power-cycle on a still surface before racing.");
+    }
   }
 
   // ─── Algorithm modules ──────────────────────────────────────
@@ -176,16 +189,26 @@ void setup() {
   // Arm task watchdog last — once registered, every loop iteration must
   // call esp_task_wdt_reset() within WDT_TIMEOUT_MS or the board hard-resets.
   // Done after gyro calibration (which uses delay() and would tickle the WDT).
+  // reconfigure() works when the Arduino core pre-initialized the TWDT
+  // (the default); fall back to init() for cores built without it. Either
+  // way, VERIFY the result — printing "armed" while arming silently failed
+  // would leave the race loop with no hang protection.
   esp_task_wdt_config_t wdt_cfg = {
       .timeout_ms    = WDT_TIMEOUT_MS,
       .idle_core_mask = 0,
       .trigger_panic = true,
   };
-  esp_task_wdt_reconfigure(&wdt_cfg);
-  esp_task_wdt_add(NULL);
-  Serial.print("Task watchdog armed at ");
-  Serial.print(WDT_TIMEOUT_MS);
-  Serial.println(" ms");
+  esp_err_t wdtErr = esp_task_wdt_reconfigure(&wdt_cfg);
+  if (wdtErr != ESP_OK) wdtErr = esp_task_wdt_init(&wdt_cfg);   // TWDT not pre-inited by this core
+  esp_err_t wdtAddErr = esp_task_wdt_add(NULL);
+  if (wdtErr != ESP_OK || wdtAddErr != ESP_OK) {
+    Serial.printf("ERROR: task watchdog arming FAILED (cfg=%d add=%d) - NO hang protection!\n",
+                  (int)wdtErr, (int)wdtAddErr);
+  } else {
+    Serial.print("Task watchdog armed at ");
+    Serial.print(WDT_TIMEOUT_MS);
+    Serial.println(" ms");
+  }
 
   Serial.println("System ready. Press E-Stop to start.");
   digitalWrite(LED_PIN, HIGH);

@@ -938,7 +938,7 @@ Fail: >2 cm → repeat steps 2-6.
 1. `OBSTACLE_MODE 1` → reflash.
 2. Place red and green pillars on the track.
 3. Run.
-4. Red → keep right; green → keep left.
+4. Red pillar → robot passes it on the RIGHT side; green pillar → robot passes on the LEFT. (Watch this on the first run: the pillar should sit on the robot's left when passing a red one.)
 5. 3 laps → parking between magenta blocks.
 
 ### 15.7. Live PID tuning

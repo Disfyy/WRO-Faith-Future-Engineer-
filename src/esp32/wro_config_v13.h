@@ -37,9 +37,9 @@
 //       Open Challenge is otherwise unaffected: lap counting is gyro-based,
 //       steering is heading/wall-PID, and corners use ToF + gyro — none of
 //       which need the encoders.
-//   NOTE: odo_init() is still called in setup() even when this is 0, because
-//         it is what runs Wire.begin()/Wire1.begin() for the I2C buses that
-//         the IMU and both VL53L1X sensors depend on. Do not remove that call.
+//   NOTE: I2C bus bring-up (Wire/Wire1 begin) lives in i2c_buses_init()
+//         (wro_i2c_buses.h), called explicitly at the top of setup() —
+//         it does NOT depend on odo_init()/encoder code running.
 //   >>> SET BACK TO 1 once the replacement magnet is glued and the air-gap is
 //       verified (0.5–3 mm) with bench target 8 (TEST_ENCODERS). <<<
 #define ENCODERS_PRESENT  0
@@ -83,11 +83,19 @@
 #define WALL_TARGET_MM          100
 #define WALL_KP                 0.40f   // µs per mm error
 #define WALL_KD                 0.05f
+// Ignore side readings beyond this: on WRO Open the inner walls are
+// randomized, so the side sensor legitimately sees 1–3 m across gaps and
+// diagonals. Correcting toward a wall that far away is never useful and
+// (unclamped) used to slam the servo to the end-stop mid-straight.
+#define WALL_MAX_VALID_MM       400
+#define WALL_TERM_CLAMP_US      150     // ± µs cap on the wall-trim term
 // Physical mounting of the side VL53L1X on the chassis:
 //   +1 = sensor on the RIGHT side of the robot
 //   -1 = sensor on the LEFT  side of the robot
-// Combined with the live lap direction this keeps the wall-PID sign correct
-// in both CW and CCW races. Verify on first bench run; flip sign if the
+// NOTE: the wall-trim sign does NOT depend on lap direction — "too far from
+// the wall my sensor faces → steer toward it" is the same geometry in CW and
+// CCW. (The old trackDirection factor guaranteed positive feedback in one of
+// the two directions.) Verify on first bench run; flip THIS sign only if the
 // robot pulls AWAY from the wall instead of toward it.
 #define WALL_TOF_SIDE          (+1)
 
@@ -123,9 +131,12 @@
 #define PARK_REV_PWM            45
 #define PARK_PHASE_A_CM         25      // reverse + steer toward bay
 #define PARK_PHASE_C_CM         45      // straight back into bay (total)
-#define PARK_MAGENTA_CONFIRM    5       // frames of magenta before approach
+#define PARK_MAGENTA_CONFIRM    5       // consecutive CAMERA FRAMES of magenta before approach
 #define PARK_FRONT_CLEAR_MM     350     // tfFront > this → we are inside the bay
 #define PARK_ALIGN_RATE_DPS     2.0f    // °/s threshold for "stable"
+#define PARK_ALIGN_MAX_MS       4000    // gyro never settles (bias drift after a 3-min
+                                        // run) → proceed with reverse anyway instead of
+                                        // idling out the match clock in PK_ALIGN
 
 // No-encoder fallback (ENCODERS_PRESENT == 0): reverse phases are TIMED
 // instead of measured by wheel distance. These are rough equivalents of
@@ -149,6 +160,12 @@
 // ============================================================
 // 7.  E-STOP / START BUTTON
 // ============================================================
+// >>> BENCH-ONLY FLAG — MUST be 0 for any run where the robot can move. <<<
+//   1 = hardware E-Stop ignored AND the race auto-starts 5 s after boot
+//       (for FSM bench tests with the button not wired, wheels OFF ground).
+//       Boot log prints a loud warning banner while enabled.
+//   0 = normal: physical button on ESTOP_PIN arms/starts/stops the race.
+#define ESTOP_BYPASS_AUTOSTART  0
 #define ESTOP_DEBOUNCE_MS_V13   20
 #define ESTOP_BOOT_GRACE_MS     500     // ignore button this long after boot
 #define ESTOP_LED_BLINK_IDLE    1000    // ms half-period
@@ -161,6 +178,10 @@
 #define IMU_FAIL_LIMIT          20
 #define IMU_GYRO_MAX_RPS        9.2f    // reject finite gyro spikes beyond ~500 dps full-scale (+margin)
 #define TF_SILENT_MS            1000    // no valid VL53L1X frame this long → block corner detect
+#define TF_FRONT_DEAD_MS        3000    // front ToF silent this long mid-race → SAFE_STOP
+                                        // (without it the corner FSM never commits and the
+                                        // robot drives full-speed into the wall). Must be
+                                        // longer than any legitimate >3.5 m diagonal view.
 #define CAM_SILENT_DEGRADE_MS   500     // mark camera offline
 #define CAM_SILENT_STOP_MS      3000    // SAFE_STOP in Obstacle if silent this long
 #define BROWNOUT_PROXY_MS       500     // PWM>0 but speed<5 cm/s this long → warn

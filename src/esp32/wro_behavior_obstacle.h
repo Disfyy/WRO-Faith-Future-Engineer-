@@ -2,8 +2,9 @@
 /*
  * Obstacle Challenge behavior — pillar avoidance via camera + heading fallback.
  *
- *   Red pillar → keep on right (setpoint = +PILLAR_OFFSET_PX)
- *   Green pillar → keep on left (setpoint = -PILLAR_OFFSET_PX)
+ *   Red pillar → VEHICLE passes on the pillar's right → pillar held LEFT
+ *                of image center (setpoint = -PILLAR_OFFSET_PX)
+ *   Green pillar → vehicle passes left → pillar held RIGHT (+PILLAR_OFFSET_PX)
  *   Both visible → prioritize closer; pre-position from far one (0.4×)
  *   Neither visible → blend toward heading-hold over PILLAR_BLEND_OUT_MS
  *

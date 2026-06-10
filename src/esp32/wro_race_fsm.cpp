@@ -32,8 +32,10 @@ static bool warnedUnconfirmedTurn = false;   // one-shot guard for the warning
 // Direction-detection debounce. The OpenMV camera can briefly flag both
 // orange and blue at sector boundaries or under threshold ambiguity, so we
 // require an EXCLUSIVE color (one bit, not the other) to hold for several
-// consecutive frames before locking direction. Without this debounce the
-// race could lock to the wrong direction on a stray dual-bit frame.
+// consecutive CAMERA FRAMES before locking direction. Votes are gated on
+// g_cam.framesOk changing: the FSM ticks at 10 ms but camera data is latched
+// for ~25–40 ms, so counting ticks would let a SINGLE glitch frame (latched
+// 2–4 ticks) satisfy the threshold and lock the wrong direction permanently.
 #define DIRECTION_CONFIRM_FRAMES 4
 static int  dirVoteCw  = 0;
 static int  dirVoteCcw = 0;
@@ -47,6 +49,10 @@ static unsigned long camLineLastSeen = 0;
 static unsigned long brownoutWarnSinceMs = 0;
 static float raceStartYawTotal     = 0.0f;   // g_yaw_total captured at race start (lap baseline)
 static int   lapLastIlaps          = 0;      // monotonic integer-lap high-water, rebased per race
+static float raceStartYaw          = 0.0f;   // g_yaw at race start — anchor for the 90° target grid,
+                                             // so pre-start gyro drift doesn't offset every leg
+static unsigned long runEnteredMs  = 0;      // when RS_RUN_* was (re)entered — front-ToF failsafe anchor
+static uint32_t lastCamFrameSeen   = 0;      // g_cam.framesOk high-water → per-FRAME (not per-tick) logic
 
 static void enterState(int s) {
   if (g_race_state != s) {
@@ -56,9 +62,18 @@ static void enterState(int s) {
   }
 }
 
-static void detectDirection() {
+// Anchor the post-corner / parking heading targets to the yaw measured at
+// race start instead of the absolute 0/90/180 grid: if the gyro drifted by D
+// degrees while queueing in WAIT_START, snapDeg(g_yaw, 90) would offset every
+// leg by -D. Relative to raceStartYaw the grid stays aligned with the track.
+static inline float snapToTrackGrid(float yaw) {
+  return raceStartYaw + snapDeg(yaw - raceStartYaw, 90.0f);
+}
+
+static void detectDirection(bool camNewFrame) {
   if (directionConfirmed) return;
   if (!g_cam.online) return;
+  if (!camNewFrame) return;   // vote at the camera frame rate, not the FSM tick rate
 
   bool orange = (g_cam.modeFlag & CAM_FLAG_ORANGE) != 0;
   bool blue   = (g_cam.modeFlag & CAM_FLAG_BLUE)   != 0;
@@ -109,16 +124,19 @@ static void updateLapCounter(unsigned long now) {
   // was sign-inverted in BOTH directions (with +yaw=CCW: CW -> neg*(+1),
   // CCW -> pos*(-1)), so ilaps stayed <= 0 and g_lap_count never incremented
   // -> the robot never reached FINISH (Open) or the parking trigger (Obstacle).
-  // - lastIlaps is monotonic (never regresses) so a brief back-spin then
-  //   forward return can't re-credit the same lap once cooldown expires.
+  // - The high-water mark advances ONLY when a lap is credited: a crossing
+  //   that lands inside the cooldown window is credited late (when the
+  //   cooldown expires) instead of being swallowed forever — the old
+  //   unconditional advance produced a permanent off-by-one (4th lap in
+  //   Open / parking never triggered in Obstacle).
   float laps  = fabsf(g_yaw_total - raceStartYawTotal) / GYRO_LAP_DEG;
   int   ilaps = (int)laps;
   if (ilaps > lapLastIlaps && (now - lastLapMs) > LAP_COOLDOWN_MS) {
     g_lap_count++;
     lastLapMs = now;
     lastLapYawTotal = g_yaw_total;
+    lapLastIlaps = ilaps;
   }
-  if (ilaps > lapLastIlaps) lapLastIlaps = ilaps;
 
   // Sanity-check secondary: camera line bits — accept if gyro fired within grace window.
   bool lineNow = (g_cam.modeFlag & (CAM_FLAG_ORANGE | CAM_FLAG_BLUE)) != 0;
@@ -156,8 +174,7 @@ static void runStraightOpen(unsigned long now) {
 
   // After a corner exit, snap target heading and let open behavior take over.
   if (g_corner_just_exited) {
-    float snapped = snapDeg(g_yaw, 90.0f);
-    open_set_target_heading(snapped);
+    open_set_target_heading(snapToTrackGrid(g_yaw));
     g_corner_just_exited = false;
   }
 
@@ -173,8 +190,7 @@ static void runStraightObstacle(unsigned long now) {
     return;
   }
   if (g_corner_just_exited) {
-    float snapped = snapDeg(g_yaw, 90.0f);
-    obs_set_target_heading(snapped);
+    obs_set_target_heading(snapToTrackGrid(g_yaw));
     g_corner_just_exited = false;
   }
   bool brake = obs_update(g_yaw, sens_tf_front_mm(), sens_tf_front_ok(), g_cam);
@@ -210,11 +226,19 @@ void race_init() {
   brownoutWarnSinceMs = 0;
   raceStartYawTotal = 0.0f;
   lapLastIlaps = 0;
+  raceStartYaw = 0.0f;
+  runEnteredMs = 0;
+  lastCamFrameSeen = 0;
   prevRaceState = RS_INIT;
 }
 
 void race_update() {
   unsigned long now = millis();
+
+  // One camera frame is latched across several 10 ms FSM ticks; per-frame
+  // logic (direction votes, magenta streak) must only advance on a NEW frame.
+  bool camNewFrame = (g_cam.framesOk != lastCamFrameSeen);
+  lastCamFrameSeen = g_cam.framesOk;
 
   // Software E-Stop from telemetry command
   if (tlm_consume_software_estop()) {
@@ -250,7 +274,7 @@ void race_update() {
     case RS_WAIT_START:
       g_cmd_steer_us  = SERVO_CENTER_US;
       g_cmd_speed_pwm = 0;
-      detectDirection();    // optional pre-roll while waiting
+      detectDirection(camNewFrame);    // optional pre-roll while waiting
       if (estop_start_requested()) {
         estop_consume_start();
         estop_set_race_active(true);
@@ -258,10 +282,14 @@ void race_update() {
         g_lap_count = 0;
         raceStartYawTotal = g_yaw_total;   // rebase gyro lap baseline at the real start
         lapLastIlaps = 0;
-        // Snap initial target heading to current yaw (whatever the start orientation is).
-        float h0 = snapDeg(g_yaw, 90.0f);
-        open_set_target_heading(h0);
-        obs_set_target_heading(h0);
+        runEnteredMs = now;
+        // Initial heading target = current yaw EXACTLY (zero initial error).
+        // Snapping the drifted pre-start yaw to the 0/90 grid would command
+        // an instant veer of up to ±45°; the grid is instead anchored at this
+        // yaw for all later corner-exit snaps (see snapToTrackGrid).
+        raceStartYaw = g_yaw;
+        open_set_target_heading(g_yaw);
+        obs_set_target_heading(g_yaw);
         corner_reset();
         corner_set_direction(globalDirection);
         open_set_direction(globalDirection);
@@ -274,7 +302,7 @@ void race_update() {
       break;
 
     case RS_RUN_OPEN: {
-      detectDirection();
+      detectDirection(camNewFrame);
       corner_update(g_yaw, sens_tf_front_mm(), sens_tf_front_ok(), now);
       warnIfUnconfirmedTurn();
       if (corner_failed()) { enterState(RS_SAFE_STOP); break; }
@@ -290,7 +318,7 @@ void race_update() {
     }
 
     case RS_RUN_OBS: {
-      detectDirection();
+      detectDirection(camNewFrame);
       corner_update(g_yaw, sens_tf_front_mm(), sens_tf_front_ok(), now);
       warnIfUnconfirmedTurn();
       if (corner_failed()) { enterState(RS_SAFE_STOP); break; }
@@ -307,14 +335,19 @@ void race_update() {
       runStraightObstacle(now);
       updateLapCounter(now);
 
-      // Parking trigger: lap 3 done AND magenta seen N+ frames in a row.
-      if (g_lap_count >= TARGET_LAPS_RACE) {
-        bool magenta = (g_cam.modeFlag & CAM_FLAG_MAGENTA) != 0;
-        if (magenta) magentaConfirmStreak++;
-        else         magentaConfirmStreak = 0;
+      // Parking trigger: lap 3 done AND magenta seen N+ camera frames in a
+      // row — never mid-corner: entering RS_PARKING abandons the turn
+      // half-done and would snap parkTargetYaw from a mid-turn yaw, heading-
+      // locking the approach up to ~90° off the bay axis.
+      if (g_lap_count >= TARGET_LAPS_RACE && !corner_active()) {
+        if (camNewFrame) {
+          bool magenta = (g_cam.modeFlag & CAM_FLAG_MAGENTA) != 0;
+          if (magenta) magentaConfirmStreak++;
+          else         magentaConfirmStreak = 0;
+        }
         if (magentaConfirmStreak >= PARK_MAGENTA_CONFIRM) {
           park_init();
-          park_begin(snapDeg(g_yaw, 90.0f));
+          park_begin(snapToTrackGrid(g_yaw));
           enterState(RS_PARKING);
         }
       }
@@ -358,6 +391,7 @@ void race_update() {
           corner_reset();
           open_reset();
           obs_reset();
+          runEnteredMs = now;   // re-anchor front-ToF failsafe (sensor data went stale during the pause)
           // Resuming a parking maneuver: re-anchor its timers so the no-encoder
           // (time-based) reverse phases account for the pause instead of ending
           // early. now == millis() at the top of race_update().
@@ -365,6 +399,16 @@ void race_update() {
           enterState(resumeTo);
         }
         // else: unknown prev state → remain in RS_SAFE_STOP (defensive).
+      } else if (estop_start_requested()) {
+        // Pre-race trap escape: if SAFE_STOP was entered BEFORE the race
+        // started (software '!' E-stop or a health drop in WAIT_START),
+        // raceActive was still false, so a button press+release registers
+        // as a START request — estop_released_after_held() can never fire
+        // (wro_estop.cpp only sets it while raceActive). Without this
+        // branch the robot is bricked until a power cycle, contradicting
+        // the recovery rules above.
+        estop_consume_start();
+        enterState(RS_WAIT_START);
       }
       break;
   }
@@ -390,6 +434,22 @@ void race_update() {
       g_race_state != RS_INIT && g_race_state != RS_FINISH) {
     g_cmd_speed_pwm = 0;
     enterState(RS_SAFE_STOP);
+  }
+
+  // Mid-race front-ToF death: without valid front distance the corner FSM can
+  // never commit and the robot drives full speed into the wall (the obstacle
+  // safety brake also needs tf_front_ok, and in no-encoder mode the stall
+  // proxy is compiled out — nothing else would catch it). RS_INIT only checks
+  // boot success; this covers a sensor dying AFTER boot (loose XSHUT/SDA, or
+  // a persistent range_status fault freezing tfFront.lastRead).
+  if (g_race_state == RS_RUN_OPEN || g_race_state == RS_RUN_OBS) {
+    unsigned long lastFront = sens_tf_front_last_ms();   // 0 until first valid read
+    unsigned long anchor = (lastFront > runEnteredMs) ? lastFront : runEnteredMs;
+    if (now - anchor > (unsigned long)TF_FRONT_DEAD_MS) {
+      Serial.println("ERROR: front VL53L1X silent too long - SAFE_STOP");
+      g_cmd_speed_pwm = 0;
+      enterState(RS_SAFE_STOP);
+    }
   }
 
   (void)lastLapYawTotal;  // set on each lap; reserved for future per-lap drift sanity checks
