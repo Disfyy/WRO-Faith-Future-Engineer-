@@ -154,14 +154,7 @@ static void updateLapCounter(unsigned long now) {
 }
 
 static bool sensorsHealthy() {
-#if ENCODERS_PRESENT
   return g_imu_ok && g_enc_ok;
-#else
-  // No-encoder mode: the AS5600s can't report wheel motion without a magnet,
-  // so race health rides on the IMU alone. See ENCODERS_PRESENT in
-  // wro_config_v13.h. (g_enc_ok is left untouched for telemetry.)
-  return g_imu_ok;
-#endif
 }
 
 static void runStraightOpen(unsigned long now) {
@@ -392,9 +385,11 @@ void race_update() {
           open_reset();
           obs_reset();
           runEnteredMs = now;   // re-anchor front-ToF failsafe (sensor data went stale during the pause)
-          // Resuming a parking maneuver: re-anchor its timers so the no-encoder
-          // (time-based) reverse phases account for the pause instead of ending
-          // early. now == millis() at the top of race_update().
+          // Resuming a parking maneuver: re-anchor its safety-timeout clocks
+          // (PARK_APPROACH_MAX_MS, PARK_ALIGN_MAX_MS, PARK_PHASE_B_MS) so a
+          // long human pause doesn't trip them on resume. The phase-completion
+          // logic is now encoder-distance based and unaffected by the pause.
+          // now == millis() at the top of race_update().
           if (resumeTo == RS_PARKING) park_shift_clock(now - safeStopEnteredMs);
           enterState(resumeTo);
         }
@@ -413,9 +408,7 @@ void race_update() {
       break;
   }
 
-#if ENCODERS_PRESENT
-  // Brownout proxy: |PWM|>deadband but speed near zero for too long -> warn (covers reverse).
-  // Needs a real wheel-speed signal, so it is disabled in no-encoder mode.
+  // Brownout proxy: |PWM|>deadband but speed near zero for too long → warn (covers reverse).
   if (abs(g_cmd_speed_pwm) > MIN_DRIVE_PWM && fabsf(g_speed_cm_s) < 5.0f) {
     if (brownoutWarnSinceMs == 0) brownoutWarnSinceMs = now;
     else if (now - brownoutWarnSinceMs > BROWNOUT_PROXY_MS) {
@@ -425,9 +418,6 @@ void race_update() {
   } else {
     brownoutWarnSinceMs = 0;
   }
-#else
-  (void)brownoutWarnSinceMs;   // speed signal needs encoders; proxy disabled
-#endif
 
   // Health failsafes
   if (!sensorsHealthy() &&
@@ -438,8 +428,7 @@ void race_update() {
 
   // Mid-race front-ToF death: without valid front distance the corner FSM can
   // never commit and the robot drives full speed into the wall (the obstacle
-  // safety brake also needs tf_front_ok, and in no-encoder mode the stall
-  // proxy is compiled out — nothing else would catch it). RS_INIT only checks
+  // safety brake also needs tf_front_ok). RS_INIT only checks
   // boot success; this covers a sensor dying AFTER boot (loose XSHUT/SDA, or
   // a persistent range_status fault freezing tfFront.lastRead).
   if (g_race_state == RS_RUN_OPEN || g_race_state == RS_RUN_OBS) {

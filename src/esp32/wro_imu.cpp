@@ -85,7 +85,7 @@ void imu_update() {
   if (!isfinite(omegaZ) || fabsf(omegaZ) > IMU_GYRO_MAX_RPS) {
     // Reject NaN/Inf AND finite-but-impossible spikes (beyond the ±500 dps
     // full-scale + margin). A single bad sample would otherwise poison
-    // g_yaw/g_yaw_total forever — fatal in no-encoder mode (IMU is sole ref).
+    // g_yaw/g_yaw_total forever.
     g_yaw_rate = 0.0f;
     if (++failStreak >= IMU_FAIL_LIMIT) g_imu_ok = false;
     return;

@@ -26,26 +26,7 @@
 #define HAS_SIDE_TOF   1
 
 // ============================================================
-// 0b. ENCODER PRESENCE  (TEMPORARY — magnet lost 2026-06-05)
-// ============================================================
-//   1 = AS5600 magnets installed → full wheel odometry (normal config).
-//   0 = magnet(s) missing / on order → run WITHOUT encoders:
-//         • the encoder health check no longer gates the race (IMU only),
-//         • Obstacle parking uses TIME-based reverse phases (PARK_PHASE_*_MS)
-//           instead of encoder distance,
-//         • the speed-based brownout proxy is disabled (no speed signal).
-//       Open Challenge is otherwise unaffected: lap counting is gyro-based,
-//       steering is heading/wall-PID, and corners use ToF + gyro — none of
-//       which need the encoders.
-//   NOTE: I2C bus bring-up (Wire/Wire1 begin) lives in i2c_buses_init()
-//         (wro_i2c_buses.h), called explicitly at the top of setup() —
-//         it does NOT depend on odo_init()/encoder code running.
-//   >>> SET BACK TO 1 once the replacement magnet is glued and the air-gap is
-//       verified (0.5–3 mm) with bench target 8 (TEST_ENCODERS). <<<
-#define ENCODERS_PRESENT  0
-
-// ============================================================
-// 0c. DEFAULT RACE DIRECTION (fallback until the camera confirms)
+// 0b. DEFAULT RACE DIRECTION (fallback until the camera confirms)
 // ============================================================
 //   -1 = CCW (robot drives LEFT from start / counter-clockwise loop)
 //   +1 = CW  (robot drives RIGHT from start / clockwise loop)
@@ -138,13 +119,11 @@
                                         // run) → proceed with reverse anyway instead of
                                         // idling out the match clock in PK_ALIGN
 
-// No-encoder fallback (ENCODERS_PRESENT == 0): reverse phases are TIMED
-// instead of measured by wheel distance. These are rough equivalents of
-// PARK_PHASE_*_CM at PARK_REV_PWM — TUNE ON BENCH with a stopwatch before
-// trusting them on track. (An E-Stop pause mid-reverse is handled: the FSM
-// shifts the parking clock forward by the paused duration on resume.)
-#define PARK_PHASE_A_MS         900     // ≈ PARK_PHASE_A_CM at PARK_REV_PWM
-#define PARK_PHASE_C_MS         1600    // ≈ PARK_PHASE_C_CM at PARK_REV_PWM
+// Safety timeouts on parking phases (NOT phase-completion timers — those
+// are encoder-distance based). Each is a failsafe abort for a sensor that
+// stopped reporting or a state that can't otherwise terminate. All survive
+// an E-Stop pause via park_shift_clock() so a 5 s human pause doesn't
+// trip them on resume.
 #define PARK_PHASE_B_MS         1500    // failsafe cap on REV_B counter-steer if heading never converges (drift/wrong bay)
 #define PARK_APPROACH_MAX_MS    6000    // abort PK_APPROACH if back-wall never detected (dead front ToF / lost marker)
 

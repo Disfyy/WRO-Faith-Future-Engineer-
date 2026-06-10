@@ -12,7 +12,7 @@ int g_park_phase     = PK_IDLE;
 
 static float         parkTargetYaw    = 0.0f;
 static long          phaseStartTicks  = 0;
-static unsigned long phaseStartMs     = 0;   // no-encoder fallback timing base
+static unsigned long phaseStartMs     = 0;   // anchor for safety-timeout failsafes (PARK_APPROACH_MAX_MS, etc.)
 static unsigned long stableSinceMs    = 0;
 static unsigned long camLossSinceMs   = 0;
 static int           bayDir           = +1;   // +1 = bay to the right of robot, -1 left
@@ -144,14 +144,9 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       // Reverse while steering INTO the bay direction.
       g_park_steer_us  = (bayDir > 0) ? SERVO_RIGHT_SAFE_US : SERVO_LEFT_SAFE_US;
       g_park_speed_pwm = -PARK_REV_PWM;
-#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;     // reverse distance (positive)
-      bool phaseDone = (cm >= PARK_PHASE_A_CM);
-#else
-      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_A_MS);
-#endif
-      if (phaseDone) {
+      if (cm >= PARK_PHASE_A_CM) {
         phaseStartTicks = enc_avg_ticks_signed;
         phaseStartMs    = now;
         g_park_phase = PK_REV_B;
@@ -183,15 +178,10 @@ void park_update(float yaw_deg, float yaw_rate_dps,
       g_park_steer_us  = parkClampSteerUs((int)(SERVO_CENTER_US + HEADING_KP * herr));
       g_park_speed_pwm = -PARK_REV_PWM;
 
-#if ENCODERS_PRESENT
       long delta = enc_avg_ticks_signed - phaseStartTicks;
       float cm = (float)(-delta) / TICKS_PER_CM;
-      bool phaseDone = (cm >= PARK_PHASE_C_CM);
-#else
-      bool phaseDone = (now - phaseStartMs >= PARK_PHASE_C_MS);
-#endif
       bool frontClear = (tf_front_ok && tf_front_mm > PARK_FRONT_CLEAR_MM);
-      if (phaseDone || frontClear) {
+      if (cm >= PARK_PHASE_C_CM || frontClear) {
         g_park_phase = PK_FINAL;
       }
       break;

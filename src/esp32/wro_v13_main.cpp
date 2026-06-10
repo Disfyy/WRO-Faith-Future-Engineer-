@@ -133,16 +133,11 @@ void setup() {
   i2c_buses_init();
 
   // ─── Encoders (AS5600 dual I2C) ─────────────────────────────
-#if ENCODERS_PRESENT
   if (!odo_init()) {
-    Serial.println("ERROR: AS5600 init failed (check both I2C buses)");
+    Serial.println("ERROR: AS5600 init failed (check both I2C buses + magnet air-gap 0.5-3 mm)");
   } else {
     Serial.println("AS5600 dual I2C: OK");
   }
-#else
-  odo_init();   // probes encoders (ignored this build); buses already up above
-  Serial.println("AS5600 encoders: DISABLED (no-magnet mode) - IMU+camera+ToF only");
-#endif
 
   // ─── VL53L1X distance sensors (owned by wro_sensors) ───────
   sens_init();
@@ -161,9 +156,9 @@ void setup() {
   } else {
     Serial.println("ICM-20948 IMU: OK");
   }
-  // Gyro bias calibration. A failed calibration leaves bias = 0, which in
-  // no-encoder mode (IMU is the only reference) means 30–120°/min of yaw
-  // drift — retry before giving up, and be loud if it still fails.
+  // Gyro bias calibration. A failed calibration leaves bias = 0, which means
+  // 30–120°/min of yaw drift — retry before giving up, and be loud if it
+  // still fails.
   {
     bool gyroCalOk = false;
     for (int attempt = 1; attempt <= 3 && !gyroCalOk; attempt++) {
@@ -227,9 +222,7 @@ void loop() {
 
   // ─── Sensor updates (HAL → estimation) ─────────────────────
   imu_update();
-#if ENCODERS_PRESENT
-  odo_update();      // skipped in no-encoder mode: avoids 2 wasted I2C reads per tick
-#endif
+  odo_update();
   sens_update();
   cam_update();
   estop_update();

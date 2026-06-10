@@ -9,11 +9,10 @@
  *
  * Previously the begin()/setClock()/setTimeOut() calls were a side-effect
  * buried inside as5600_init(), so the IMU and BOTH VL53L1X sensors silently
- * depended on the encoder init running first (and in the right order). That
- * coupling is a latent footgun — especially in no-encoder mode, where it is
- * tempting to drop the encoder init entirely. This header makes bus bring-up
- * explicit and order-independent: call i2c_buses_init() once, early in setup(),
- * before any device driver touches a bus.
+ * depended on the encoder init running first (and in the right order). This
+ * header makes bus bring-up explicit and order-independent: call
+ * i2c_buses_init() once, early in setup(), before any device driver touches
+ * a bus.
  *
  * Safe to call from multiple init paths (e.g. main setup() AND as5600_init()):
  * Wire.begin() is itself safe to repeat, and the per-translation-unit once-guard
