@@ -3,7 +3,7 @@
  * I2C bus bring-up — single source of truth for both native peripherals.
  *
  * The ESP32-S3 has two hardware I2C controllers: Wire (I2C0, GPIO 8/9) and
- * Wire1 (I2C1, GPIO 11/12). Three driver families share them:
+ * Wire1 (I2C1, GPIO 3/4). Three driver families share them:
  *   I2C0 (Wire):  ICM-20948 IMU + AS5600 Left + VL53L1X Front
  *   I2C1 (Wire1): AS5600 Right + VL53L1X Side
  *

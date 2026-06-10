@@ -20,7 +20,7 @@
  * Bus topology:
  *   I2C0 (Wire,  GPIO 8/9):    ICM-20948 (0x68) + AS5600 Left (0x36) +
  *                              VL53L1X Front (0x29 → 0x30)
- *   I2C1 (Wire1, GPIO 11/12):  AS5600 Right (0x36) +
+ *   I2C1 (Wire1, GPIO 3/4):    AS5600 Right (0x36) +
  *                              VL53L1X Side  (0x29 → 0x31)
  *   UART0 (native USB-C):      Debug / telemetry
  *   UART2 (GPIO 17/18):        OpenMV H7 Plus camera
@@ -33,8 +33,10 @@
 // ============================================================
 #define I2C0_SDA            8
 #define I2C0_SCL            9
-#define I2C1_SDA            11
-#define I2C1_SCL            12
+#define I2C1_SDA            3     // moved from GPIO11 (2026-06). NOTE: GPIO3 is an
+                                  // ESP32-S3 strapping pin (JTAG sel) — fine for I2C
+                                  // in practice; if boot ever misbehaves, use GPIO13.
+#define I2C1_SCL            4     // moved from GPIO12
 #define I2C_FREQ_HZ         400000
 
 #define ICM20948_ADDRESS    0x68    // I2C0, AD0 → GND
@@ -88,9 +90,9 @@
 #define SERVO_CENTER        90
 #define SERVO_MAX_RIGHT     135
 #define SERVO_MAX_LEFT      45
-#define SERVO_CENTER_US     1500
-#define SERVO_LEFT_US       1000
-#define SERVO_RIGHT_US      2000
+#define SERVO_CENTER_US     1350
+#define SERVO_LEFT_US       1050
+#define SERVO_RIGHT_US      1700
 
 // ============================================================
 //  9.  Odometry — AS5600 12-bit

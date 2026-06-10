@@ -7,7 +7,7 @@
  *
  * Wiring:
  *   Front sensor → I2C0 (Wire,  GPIO8/9), XSHUT=GPIO15, runtime addr 0x30
- *   Side  sensor → I2C1 (Wire1, GPIO11/12), XSHUT=GPIO16, runtime addr 0x31
+ *   Side  sensor → I2C1 (Wire1, GPIO3/4), XSHUT=GPIO16, runtime addr 0x31
  *
  * The boot dance (held in vl53l1x_dual.h):
  *   1. Drive every XSHUT low (sensors in reset).
