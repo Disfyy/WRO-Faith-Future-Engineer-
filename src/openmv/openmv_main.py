@@ -34,13 +34,19 @@ from pyb import UART, LED
 # ============================================================
 
 # --- Sensor ---------------------------------------------------
+# HARD-CODED gains/exposure (measured 2026-06-12 under home practice
+# lighting with the get_gain_db/get_rgb_gain_db/get_exposure_us snippet).
+# The old "auto-settle 2 s then lock" froze whatever scene the camera
+# happened to boot at — colors shifted every boot and thresholds rotted.
+# Fixed values make every boot identical. RE-MEASURE at the competition
+# venue (2 min) and whenever the practice room/lighting changes.
 sensor.reset()
 sensor.set_pixformat(sensor.RGB565)
 sensor.set_framesize(sensor.QQVGA)         # 160 x 120
-sensor.skip_frames(time=2000)              # let auto-gain/AWB settle...
-sensor.set_auto_gain(False)                # ...then lock for stable LAB
-sensor.set_auto_whitebal(False)
-sensor.set_auto_exposure(False, exposure_us=10000)
+sensor.set_auto_gain(False, gain_db=0.0)
+sensor.set_auto_whitebal(False, rgb_gain_db=(60.6039, 60.206, 64.2491))
+sensor.set_auto_exposure(False, exposure_us=6327)
+sensor.skip_frames(time=500)               # flush frames with new settings
 
 # --- UART -----------------------------------------------------
 # UART(3) is the H7 Plus's hardware UART exposed on the camera-facing
@@ -90,15 +96,19 @@ FOCAL_PIX = 120
 # Starting ranges below are derived from the rule-given RGB values
 # (sRGB -> CIELAB, D65) widened ~+/-15 for lighting tolerance.
 # ============================================================
+# Tuned on bench 2026-06-11 (Stage 2). Magenta is still the derived
+# default — no magenta piece on hand yet; tune before parking practice.
 # Red pillar      RGB(238, 39, 55)   ->  L~52  a~+70  b~+46
-THRESHOLD_RED     = (35, 70,  30,  90,  10,  70)
+THRESHOLD_RED     = (15, 30,  19, 127, -10,  84)
 # Green pillar    RGB( 68,214, 44)   ->  L~76  a~-65  b~+67
-THRESHOLD_GREEN   = (55, 90, -90, -25,  20,  80)
+# CAUTION: a-max +2 is one step from neutral — verify black walls in
+# shadow do NOT match; if they do, pull a-max toward -10.
+THRESHOLD_GREEN   = (16, 56, -25,   2, -28,   7)
 # Orange line     RGB(255,102,  0)   ->  L~66  a~+45  b~+73
-THRESHOLD_ORANGE  = (45, 85,  20,  70,  30,  90)
+THRESHOLD_ORANGE  = (53, 76,  21,  41, -17,  70)
 # Blue line       RGB(  0, 51,255)   ->  L~32  a~+71  b~-105
-THRESHOLD_BLUE    = (15, 50,  10,  80, -128, -30)
-# Magenta park    RGB(255,  0,255)   ->  L~60  a~+98  b~-60
+THRESHOLD_BLUE    = (41, 76,  10,  18, -54, -24)
+# Magenta park    RGB(255,  0,255)   ->  L~60  a~+98  b~-60  (NOT TUNED YET)
 THRESHOLD_MAGENTA = (40, 80,  55, 100, -90, -30)
 
 # --- Regions of Interest (x, y, w, h) ------------------------

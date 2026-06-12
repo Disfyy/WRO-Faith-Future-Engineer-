@@ -42,9 +42,13 @@
 // 1.  CORNERING — VL53L1X-front + IMU yaw delta state machine
 // ============================================================
 #define TURN_SLOWDOWN_MM      600    // begin pre-corner slowdown
-#define TURN_COMMIT_MM        350    // commit to turning
+// 2026-06-11 run log: matte-black wall first returns valid frames around
+// 400-450 mm (flickering with 9999 before that). Waiting down to 350 left
+// EXECUTE starting at ~175 mm -> TURN_PANIC abort. Commit on first stable
+// sighting instead.
+#define TURN_COMMIT_MM        420    // commit to turning
 #define TURN_FRAMES_DEBOUNCE  3      // valid frames before commit
-#define TURN_BRAKE_MS         180    // brake-straight phase
+#define TURN_BRAKE_MS         100    // brake-straight phase (180 ms ate ~14 cm at 0.8 m/s)
 #define TURN_SPEED_PWM        70     // PWM during EXECUTE (slip kills v11 turn)
 #define TURN_TARGET_DEG       80.0f  // exit angle (under-rotated; heading-hold cleans last 10°)
 #define TURN_MAX_MS           2500   // failsafe abort
@@ -114,7 +118,10 @@
 // ============================================================
 // 4.  SPEED PROFILES
 // ============================================================
-#define OPEN_MAX_PWM            80
+// Testing value while front-ToF range on black walls is short (~420 mm):
+// slower approach buys reaction distance. Raise back toward 80 with S+ once
+// corners are reliable (or after the static range test confirms more range).
+#define OPEN_MAX_PWM            65
 #define OBS_MAX_PWM             130     // down from 140 in v11
 #define SPEED_RAMP_STEP         8       // PWM units per 10 ms tick
 #define MIN_DRIVE_PWM           35      // motor deadband floor

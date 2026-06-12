@@ -60,7 +60,9 @@ static inline void vl53_hold_all_in_reset() {
 
 // ─── Boot + configure one sensor ──────────────────────────────
 //   Releases its XSHUT, lets it claim 0x29, then reassigns to targetAddr.
-//   Distance mode = Medium (~3 m, 50 ms budget) — fast enough for corner detection.
+//   Distance mode = Long (50 ms budget, 20 Hz). Medium collapsed to ~600 mm
+//   on the matte-black WRO walls (IR absorbed); Long buys back range on dark
+//   targets at the same update rate (Long-mode minimum budget is 33 ms).
 static bool vl53_boot_one(VL53L1Sensor &s, TwoWire &bus,
                           uint8_t xshut, uint8_t targetAddr,
                           const char *name) {
@@ -96,7 +98,7 @@ static bool vl53_boot_one(VL53L1Sensor &s, TwoWire &bus,
     digitalWrite(xshut, LOW);
     return false;
   }
-  s.sensor.setDistanceMode(VL53L1X::Medium);
+  s.sensor.setDistanceMode(VL53L1X::Long);
   s.sensor.setMeasurementTimingBudget(50000);   // µs
   s.sensor.startContinuous(50);                 // ms between reads → 20 Hz
 
