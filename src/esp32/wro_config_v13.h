@@ -81,6 +81,20 @@
 #define WALL_TOF_SIDE          (+1)
 
 // ============================================================
+// 2b. STEERING ASYMMETRY TRIM — weight-imbalance compensation
+// ============================================================
+// 2026-06-11 corner-weight check: right-rear heavier, left side light —
+// equal servo deflection gives unequal turn radii. Fix mechanics first
+// (move the LiPo); these gains trim the residual only. Each gain scales
+// the µs deflection on its own side of SERVO_CENTER_US (1.00 = off).
+// Measure: yaw-rate ratio at fixed deflection, L vs R → gain = ratio.
+// Expect 1.10–1.25; NOT 2.0 — that saturates the servo end-stop and
+// doubles the effective heading-hold Kp on one side (oscillation).
+// Live-tune over USB: "L1.15" / "R1.00" (see wro_telemetry.cpp).
+#define STEER_GAIN_LEFT_DEFAULT   1.00f
+#define STEER_GAIN_RIGHT_DEFAULT  1.00f
+
+// ============================================================
 // 3.  OBSTACLE CHALLENGE — pillar avoidance PID
 // ============================================================
 #define PILLAR_OFFSET_PX        30      // setpoint shift (px) for active pillar.
@@ -149,6 +163,21 @@
 #define ESTOP_BOOT_GRACE_MS     500     // ignore button this long after boot
 #define ESTOP_LED_BLINK_IDLE    1000    // ms half-period
 #define ESTOP_LED_BLINK_ARMED   200
+
+// ============================================================
+// 7b. WIFI TELEMETRY (TESTING ONLY)
+// ============================================================
+// >>> TESTING-ONLY FLAG — MUST be 0 for competition rounds. <<<
+// Rule 11.10: no Wi-Fi/BT/RF during competition rounds; built-in radios
+// must be disabled. This flag IS that disable: 0 compiles the radio out.
+//   1 = robot opens its own Wi-Fi hotspot and mirrors every telemetry
+//       line over UDP broadcast. Laptop: join the AP, run `nc -ul 3333`.
+//   0 = competition: Wi-Fi never initialized, module compiles to no-ops.
+#define WIFI_TELEMETRY          1
+#define WIFI_TLM_SSID           "WRO-FAITH"
+#define WIFI_TLM_PASS           "faith2026"     // min 8 chars (WPA2)
+#define WIFI_TLM_CHANNEL        6
+#define WIFI_TLM_PORT           3333
 
 // ============================================================
 // 8.  SAFETY THRESHOLDS

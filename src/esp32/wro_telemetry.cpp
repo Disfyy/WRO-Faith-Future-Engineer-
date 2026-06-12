@@ -7,6 +7,7 @@
 #include "wro_odometry.h"
 #include "wro_camera.h"
 #include "wro_telemetry.h"
+#include "wro_telemetry_wifi.h"
 #include "wro_sensors.h"
 
 // Live-tunable gains (extern declared in wro_telemetry.h; the behavior
@@ -18,6 +19,8 @@ float  g_pid_kd_obs   = PILLAR_KD;
 float  g_gyro_kp      = HEADING_KP;
 int    g_max_pwm_obs  = OBS_MAX_PWM;
 int    g_max_pwm_open = OPEN_MAX_PWM;
+float  g_steer_gain_left  = STEER_GAIN_LEFT_DEFAULT;
+float  g_steer_gain_right = STEER_GAIN_RIGHT_DEFAULT;
 
 static bool softwareEstopFlag = false;
 
@@ -49,6 +52,16 @@ static void handleCommand(const char *line) {
     case 'I': g_pid_ki_obs = atof(line + 1); Serial.printf("KI=%.4f\n", g_pid_ki_obs); break;
     case 'D': g_pid_kd_obs = atof(line + 1); Serial.printf("KD=%.4f\n", g_pid_kd_obs); break;
     case 'G': g_gyro_kp    = atof(line + 1); Serial.printf("GKP=%.4f\n", g_gyro_kp);  break;
+    // Steering asymmetry trim. Clamped to [0.5, 1.5]: a fat-fingered "L12"
+    // would otherwise pin every left command against the end-stop.
+    case 'L':
+      g_steer_gain_left  = constrain((float)atof(line + 1), 0.5f, 1.5f);
+      Serial.printf("STEER_GAIN L=%.3f\n", g_steer_gain_left);
+      break;
+    case 'R':
+      g_steer_gain_right = constrain((float)atof(line + 1), 0.5f, 1.5f);
+      Serial.printf("STEER_GAIN R=%.3f\n", g_steer_gain_right);
+      break;
     case 'S':
       if (line[1] == '+') { g_max_pwm_obs += 5; g_max_pwm_open += 5; }
       if (line[1] == '-') { g_max_pwm_obs -= 5; g_max_pwm_open -= 5; }
@@ -64,8 +77,9 @@ static void handleCommand(const char *line) {
       Serial.printf("yaw=%.1f total=%.1f distL=%ld distR=%ld v=%.1fcm/s tf=%dmm cam_ok=%d\n",
                     g_yaw, g_yaw_total, g_dist_left_ticks, g_dist_right_ticks,
                     g_speed_cm_s, sens_tf_front_mm(), (int)g_cam.online);
-      Serial.printf("KP=%.4f KI=%.4f KD=%.4f GKP=%.4f\n",
-                    g_pid_kp_obs, g_pid_ki_obs, g_pid_kd_obs, g_gyro_kp);
+      Serial.printf("KP=%.4f KI=%.4f KD=%.4f GKP=%.4f SGL=%.3f SGR=%.3f\n",
+                    g_pid_kp_obs, g_pid_ki_obs, g_pid_kd_obs, g_gyro_kp,
+                    g_steer_gain_left, g_steer_gain_right);
       break;
     case '!':
       softwareEstopFlag = true;
@@ -103,7 +117,9 @@ void tlm_update_periodic(int race_state, int corner_state, int lap,
   int rd = (g_cam.redDist   < 999) ? g_cam.redDist   : -1;
   int gd = (g_cam.greenDist < 999) ? g_cam.greenDist : -1;
 
-  Serial.printf(
+  // Build once so USB serial and the Wi-Fi mirror emit the identical line.
+  static char tlmLine[160];
+  snprintf(tlmLine, sizeof(tlmLine),
     "T=%lu ST=%s CN=%s LAP=%d YAW=%.1f DST=L%+ld/R%+ld TF=%dmm CAM=R(%d,%d)/G(%d,%d) PWM=%+d ST=%dus\n",
     now,
     raceStateName(race_state),
@@ -116,6 +132,8 @@ void tlm_update_periodic(int race_state, int corner_state, int lap,
     g_cam.greenX, gd,
     signed_pwm, steer_us
   );
+  Serial.print(tlmLine);
+  tlm_wifi_send(tlmLine);
 }
 
 static const char* raceStateName(int s) {

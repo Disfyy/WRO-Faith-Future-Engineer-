@@ -90,8 +90,11 @@
 #define SERVO_CENTER        90
 #define SERVO_MAX_RIGHT     135
 #define SERVO_MAX_LEFT      45
+// 2026-06-11 bench recal (servo-cal target): travel is now symmetric,
+// 350 µs each side. The old LEFT=1050 under-used the left lock by 50 µs —
+// part of the "turns weaker one way" complaint, on top of corner weights.
 #define SERVO_CENTER_US     1350
-#define SERVO_LEFT_US       1050
+#define SERVO_LEFT_US       1000
 #define SERVO_RIGHT_US      1700
 
 // ============================================================
