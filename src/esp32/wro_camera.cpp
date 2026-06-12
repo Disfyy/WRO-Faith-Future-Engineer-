@@ -1,9 +1,11 @@
 #include "wro_build_target.h"
-#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
+#include "wro_config_v13.h"
+// OpenMV/ESP32-CAM text-frame backend. The Pixy2 binary backend lives in
+// wro_camera_pixy2.cpp; exactly one of them compiles (CAMERA_BACKEND).
+#if WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN && CAMERA_BACKEND == CAMERA_BACKEND_OPENMV
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
-#include "wro_config_v13.h"
 #include "wro_camera.h"
 
 CameraData g_cam = {};
@@ -121,4 +123,4 @@ void cam_update() {
   g_cam.online = (g_cam.lastValidMs != 0) && (sinceValid <= CAM_SILENT_DEGRADE_MS);
 }
 
-#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN
+#endif  // WRO_ACTIVE_TARGET == WRO_TARGET_V13_MAIN && CAMERA_BACKEND == CAMERA_BACKEND_OPENMV

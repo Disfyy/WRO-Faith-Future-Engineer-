@@ -33,14 +33,7 @@ void estop_set_race_active(bool active) { raceActive = active; }
 void estop_update() {
   unsigned long now = millis();
 #if ESTOP_BYPASS_AUTOSTART
-  // BENCH-ONLY: button not wired — pretend it is never pressed, and fire a
-  // start request 5 s after boot so the FSM can be exercised hands-free.
-  bool reading = false;
-  static bool autoStarted = false;
-  if (!raceActive && !autoStarted && now - bootMs > 5000) {
-    autoStarted = true;
-    startRequested = true;
-  }
+  bool reading = (digitalRead(ESTOP_PIN) == LOW);
 #else
   bool reading = (digitalRead(ESTOP_PIN) == LOW);
 #endif

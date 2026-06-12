@@ -8,6 +8,7 @@
  *
  * Live commands (newline-terminated over USB Serial):
  *   P0.45  /  I0.001  /  D0.30  /  G1.20  — PID gains
+ *   L1.15  /  R1.00                         — steering asymmetry trim per side
  *   S+ / S-                                 — bump max speed ±5
  *   ?                                        — full state dump
  *   !                                        — software E-Stop request
@@ -32,3 +33,5 @@ extern float g_pid_kd_obs;     // pillar PID Kd
 extern float g_gyro_kp;        // heading-hold Kp (open + obstacle blend)
 extern int   g_max_pwm_obs;    // straight-line PWM cap, obstacle mode
 extern int   g_max_pwm_open;   // straight-line PWM cap, open mode
+extern float g_steer_gain_left;  // steering trim: ×gain on left-half servo deflection
+extern float g_steer_gain_right; // steering trim: ×gain on right-half servo deflection

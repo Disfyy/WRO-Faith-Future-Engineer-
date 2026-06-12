@@ -42,9 +42,13 @@
 // 1.  CORNERING — VL53L1X-front + IMU yaw delta state machine
 // ============================================================
 #define TURN_SLOWDOWN_MM      600    // begin pre-corner slowdown
-#define TURN_COMMIT_MM        350    // commit to turning
+// 2026-06-11 run log: matte-black wall first returns valid frames around
+// 400-450 mm (flickering with 9999 before that). Waiting down to 350 left
+// EXECUTE starting at ~175 mm -> TURN_PANIC abort. Commit on first stable
+// sighting instead.
+#define TURN_COMMIT_MM        420    // commit to turning
 #define TURN_FRAMES_DEBOUNCE  3      // valid frames before commit
-#define TURN_BRAKE_MS         180    // brake-straight phase
+#define TURN_BRAKE_MS         100    // brake-straight phase (180 ms ate ~14 cm at 0.8 m/s)
 #define TURN_SPEED_PWM        70     // PWM during EXECUTE (slip kills v11 turn)
 #define TURN_TARGET_DEG       80.0f  // exit angle (under-rotated; heading-hold cleans last 10°)
 #define TURN_MAX_MS           2500   // failsafe abort
@@ -81,6 +85,20 @@
 #define WALL_TOF_SIDE          (+1)
 
 // ============================================================
+// 2b. STEERING ASYMMETRY TRIM — weight-imbalance compensation
+// ============================================================
+// 2026-06-11 corner-weight check: right-rear heavier, left side light —
+// equal servo deflection gives unequal turn radii. Fix mechanics first
+// (move the LiPo); these gains trim the residual only. Each gain scales
+// the µs deflection on its own side of SERVO_CENTER_US (1.00 = off).
+// Measure: yaw-rate ratio at fixed deflection, L vs R → gain = ratio.
+// Expect 1.10–1.25; NOT 2.0 — that saturates the servo end-stop and
+// doubles the effective heading-hold Kp on one side (oscillation).
+// Live-tune over USB: "L1.15" / "R1.00" (see wro_telemetry.cpp).
+#define STEER_GAIN_LEFT_DEFAULT   1.00f
+#define STEER_GAIN_RIGHT_DEFAULT  1.00f
+
+// ============================================================
 // 3.  OBSTACLE CHALLENGE — pillar avoidance PID
 // ============================================================
 #define PILLAR_OFFSET_PX        30      // setpoint shift (px) for active pillar.
@@ -100,7 +118,10 @@
 // ============================================================
 // 4.  SPEED PROFILES
 // ============================================================
-#define OPEN_MAX_PWM            80
+// Testing value while front-ToF range on black walls is short (~420 mm):
+// slower approach buys reaction distance. Raise back toward 80 with S+ once
+// corners are reliable (or after the static range test confirms more range).
+#define OPEN_MAX_PWM            65
 #define OBS_MAX_PWM             130     // down from 140 in v11
 #define SPEED_RAMP_STEP         8       // PWM units per 10 ms tick
 #define MIN_DRIVE_PWM           35      // motor deadband floor
@@ -151,6 +172,21 @@
 #define ESTOP_LED_BLINK_ARMED   200
 
 // ============================================================
+// 7b. WIFI TELEMETRY (TESTING ONLY)
+// ============================================================
+// >>> TESTING-ONLY FLAG — MUST be 0 for competition rounds. <<<
+// Rule 11.10: no Wi-Fi/BT/RF during competition rounds; built-in radios
+// must be disabled. This flag IS that disable: 0 compiles the radio out.
+//   1 = robot opens its own Wi-Fi hotspot and mirrors every telemetry
+//       line over UDP broadcast. Laptop: join the AP, run `nc -ul 3333`.
+//   0 = competition: Wi-Fi never initialized, module compiles to no-ops.
+#define WIFI_TELEMETRY          1
+#define WIFI_TLM_SSID           "WRO-FAITH"
+#define WIFI_TLM_PASS           "faith2026"     // min 8 chars (WPA2)
+#define WIFI_TLM_CHANNEL        6
+#define WIFI_TLM_PORT           3333
+
+// ============================================================
 // 8.  SAFETY THRESHOLDS
 // ============================================================
 #define ENC_FAIL_LIMIT_V13      50      // consecutive read failures → SAFE_STOP
@@ -190,3 +226,34 @@
 // ============================================================
 #define CAM_DIST_MAX_CM         300     // reject reads above this
 #define CAM_DIST_JUMP_MAX_CM    50      // reject frame-to-frame jump above this
+
+// ============================================================
+// 12. CAMERA BACKEND
+//     2026-06-12: OpenMV OV5640 sensor module damaged 5 days before
+//     the competition. Interim camera is a Pixy2/2.1 on the SAME
+//     UART2 pins. Both backends fill the same g_cam struct, so the
+//     FSM, failsafes and telemetry are backend-agnostic.
+//
+//     OPENMV — newline text frames (openmv_main.py / espcam_vision.ino)
+//     PIXY2  — binary request/response block protocol. Signatures must
+//              be taught in PixyMon in THIS order:
+//                1 = red pillar      2 = green pillar
+//                3 = orange line     4 = blue line
+//                5 = magenta parking
+//              PixyMon → Configure → Interface: set "Data out port" to
+//              UART, baud 115200 (factory default is 19200!).
+// ============================================================
+#define CAMERA_BACKEND_OPENMV   0
+#define CAMERA_BACKEND_PIXY2    1
+#define CAMERA_BACKEND          CAMERA_BACKEND_PIXY2   // ← revert to OPENMV if the module is revived
+
+#define PIXY_POLL_MS            20      // getBlocks request period (~50 Hz)
+#define PIXY_RESP_TIMEOUT_MS    100     // stalled response → re-request
+#define PIXY_FOCAL_PIX          190     // pinhole focal in Pixy px. CALIBRATE:
+                                        // red pillar at exactly 50 cm → focal = 5 * block_h
+                                        // (190 assumes Pixy2.1 ~80° HFOV; Pixy2 60° ≈ 270)
+#define PIXY_MIN_AREA_PILLAR    180     // w*h px² (≈ OpenMV 50 px @QQVGA scaled to 316×208)
+#define PIXY_MIN_AREA_LINE      300
+#define PIXY_MIN_AREA_MAGENTA   250
+#define PIXY_LINE_Y_MIN         130     // floor lines: lower band only (y of 0..207)
+#define PIXY_MAGENTA_Y_MIN      70      // parking blocks: mid-lower band

@@ -24,6 +24,8 @@
 #include <Adafruit_Sensor.h>
 
 #include "wro_hw_config_v13.h"
+#include "wro_config_v13.h"      // SERVO_*_SAFE_US + STEER_GAIN defaults
+#include "wro_steering_comp.h"
 #include "as5600_dual_i2c.h"
 #include "vl53l1x_dual.h"
 
@@ -36,6 +38,8 @@ Servo steeringServo;
 bool imuOK      = false;
 bool encOK      = false;
 bool liveMode   = false;
+float benchGainL = STEER_GAIN_LEFT_DEFAULT;
+float benchGainR = STEER_GAIN_RIGHT_DEFAULT;
 unsigned long motorStopAt = 0;
 char camLast[BENCH_CAM_BUF] = {0};
 unsigned long camLastMs = 0;
@@ -45,6 +49,8 @@ void printHelp() {
   Serial.println("  s  full status  |  e  toggle live");
   Serial.println("  m  motor fwd 2s |  r  motor rev 2s");
   Serial.println("  l  servo left   |  c  center  |  k  right");
+  Serial.println("  g  steer-gain check (table + sweep)");
+  Serial.println("  L1.22 / R1.05    set steer asymmetry gains");
   Serial.println("  h  this help");
 }
 
@@ -129,6 +135,38 @@ void printLive() {
   Serial.println();
 }
 
+// Same trim + clamp pipeline as writeSteeringUs() in wro_v13_main.cpp,
+// so what you see on the bench is what the race firmware will command.
+int steerComp(int us) {
+  int comp = steer_compensate_us(us, benchGainL, benchGainR);
+  return constrain(comp, SERVO_LEFT_SAFE_US, SERVO_RIGHT_SAFE_US);
+}
+
+void gainCheck() {
+  Serial.println("\n=== STEER GAIN CHECK ===");
+  Serial.printf("gains: L=%.3f  R=%.3f   (set with L1.22 / R1.05)\n",
+                benchGainL, benchGainR);
+  Serial.println("cmd_us -> comp_us (after SAFE clamp):");
+  const int pct[3] = {25, 50, 100};
+  for (int side = 0; side < 2; side++) {
+    int lock = (side == 0) ? SERVO_LEFT_US : SERVO_RIGHT_US;
+    Serial.println(side == 0 ? " LEFT:" : " RIGHT:");
+    for (int i = 0; i < 3; i++) {
+      int cmd = SERVO_CENTER_US + (lock - SERVO_CENTER_US) * pct[i] / 100;
+      Serial.printf("  %3d%%  %4d -> %4d\n", pct[i], cmd, steerComp(cmd));
+    }
+  }
+  Serial.println("sweep: mark the wheel angle at each lock to compare travel");
+  steeringServo.writeMicroseconds(SERVO_CENTER_US);            delay(600);
+  Serial.printf("  LEFT  lock -> %d us\n", steerComp(SERVO_LEFT_US));
+  steeringServo.writeMicroseconds(steerComp(SERVO_LEFT_US));   delay(1500);
+  steeringServo.writeMicroseconds(SERVO_CENTER_US);            delay(600);
+  Serial.printf("  RIGHT lock -> %d us\n", steerComp(SERVO_RIGHT_US));
+  steeringServo.writeMicroseconds(steerComp(SERVO_RIGHT_US));  delay(1500);
+  steeringServo.writeMicroseconds(SERVO_CENTER_US);
+  Serial.println("=== DONE — back to center ===\n");
+}
+
 void handleCmd(const char *cmd) {
   if      (strcmp(cmd, "s") == 0) printStatus();
   else if (strcmp(cmd, "m") == 0) motorFwd(120, 2000);
@@ -137,6 +175,13 @@ void handleCmd(const char *cmd) {
   else if (strcmp(cmd, "c") == 0) { steeringServo.writeMicroseconds(SERVO_CENTER_US);    Serial.println("Servo CENTER"); }
   else if (strcmp(cmd, "k") == 0) { steeringServo.writeMicroseconds(SERVO_RIGHT_US); Serial.println("Servo RIGHT");  }
   else if (strcmp(cmd, "e") == 0) { liveMode = !liveMode; Serial.print("Live: "); Serial.println(liveMode ? "ON" : "OFF"); }
+  else if (strcmp(cmd, "g") == 0) gainCheck();
+  else if ((cmd[0] == 'L' || cmd[0] == 'R') && cmd[1] != '\0') {
+    // Same [0.5, 1.5] guard as the race firmware's live-tune commands.
+    float v = constrain((float)atof(cmd + 1), 0.5f, 1.5f);
+    if (cmd[0] == 'L') benchGainL = v; else benchGainR = v;
+    Serial.printf("steer gain %c = %.3f\n", cmd[0], v);
+  }
   else if (strcmp(cmd, "h") == 0) printHelp();
   else { Serial.print("Unknown: "); Serial.println(cmd); }
 }

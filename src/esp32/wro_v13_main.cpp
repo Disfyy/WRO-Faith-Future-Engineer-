@@ -44,14 +44,19 @@
 #include "wro_park.h"
 #include "wro_estop.h"
 #include "wro_telemetry.h"
+#include "wro_telemetry_wifi.h"
 #include "wro_race_fsm.h"
 #include "wro_sensors.h"
+#include "wro_steering_comp.h"
 
 static int  commandSpeed = 0;        // ramped actual PWM (signed)
 static unsigned long lastLoopMs = 0;
 
 // ─── Servo write with calibrated µs ───────────────────────────
 static void writeSteeringUs(int us) {
+  // Asymmetry trim must run BEFORE the safe clamp so a gain >1 can never
+  // push the horn past the mechanical end-stop.
+  us = steer_compensate_us(us, g_steer_gain_left, g_steer_gain_right);
   if (us > SERVO_RIGHT_SAFE_US) us = SERVO_RIGHT_SAFE_US;
   if (us < SERVO_LEFT_SAFE_US)  us = SERVO_LEFT_SAFE_US;
   
@@ -103,11 +108,14 @@ void setup() {
 #else
   Serial.println("OPEN CHALLENGE");
 #endif
+#if WIFI_TELEMETRY
+  Serial.println(" WiFi: TELEMETRY AP ON - TESTING BUILD, set WIFI_TELEMETRY 0 for competition (Rule 11.10)");
+#else
   Serial.println(" WiFi: OFF, BT: OFF (Rule 11.10)");
+#endif
   Serial.println("============================================================");
 
   // ─── E-Stop input (early so any held-button bug is grace-windowed) ──
-  Serial.println("CHK: estop_init");
   estop_init();
 
   // ─── Status LED ─────────────────────────────────────────────
@@ -180,6 +188,10 @@ void setup() {
   corner_init();
   tlm_init();
   race_init();
+
+  // Wi-Fi telemetry mirror (testing builds only; no-op when WIFI_TELEMETRY=0).
+  // Must run before the WDT below: softAP() blocks longer than WDT_TIMEOUT_MS.
+  tlm_wifi_init();
 
   // Arm task watchdog last — once registered, every loop iteration must
   // call esp_task_wdt_reset() within WDT_TIMEOUT_MS or the board hard-resets.
