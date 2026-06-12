@@ -1,1 +1,2 @@
 date,component,issue_found,action_taken,replaced_part,next_check_date,technician,notes
+2026-06-12,OpenMV H7 Plus sensor module,"sensor module damaged during reseat — 'Failed to detect the image sensor' on sensor.reset(), main board boots and REPL works","diagnosis in progress; replacement OV5640 module to be ordered",,2026-06-19,team,"damage occurred during camera exposure recalibration; main board presumed alive; ESP32-CAM considered as fallback"

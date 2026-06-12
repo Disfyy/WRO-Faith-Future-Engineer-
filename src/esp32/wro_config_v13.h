@@ -190,3 +190,34 @@
 // ============================================================
 #define CAM_DIST_MAX_CM         300     // reject reads above this
 #define CAM_DIST_JUMP_MAX_CM    50      // reject frame-to-frame jump above this
+
+// ============================================================
+// 12. CAMERA BACKEND
+//     2026-06-12: OpenMV OV5640 sensor module damaged 5 days before
+//     the competition. Interim camera is a Pixy2/2.1 on the SAME
+//     UART2 pins. Both backends fill the same g_cam struct, so the
+//     FSM, failsafes and telemetry are backend-agnostic.
+//
+//     OPENMV — newline text frames (openmv_main.py / espcam_vision.ino)
+//     PIXY2  — binary request/response block protocol. Signatures must
+//              be taught in PixyMon in THIS order:
+//                1 = red pillar      2 = green pillar
+//                3 = orange line     4 = blue line
+//                5 = magenta parking
+//              PixyMon → Configure → Interface: set "Data out port" to
+//              UART, baud 115200 (factory default is 19200!).
+// ============================================================
+#define CAMERA_BACKEND_OPENMV   0
+#define CAMERA_BACKEND_PIXY2    1
+#define CAMERA_BACKEND          CAMERA_BACKEND_PIXY2   // ← revert to OPENMV if the module is revived
+
+#define PIXY_POLL_MS            20      // getBlocks request period (~50 Hz)
+#define PIXY_RESP_TIMEOUT_MS    100     // stalled response → re-request
+#define PIXY_FOCAL_PIX          190     // pinhole focal in Pixy px. CALIBRATE:
+                                        // red pillar at exactly 50 cm → focal = 5 * block_h
+                                        // (190 assumes Pixy2.1 ~80° HFOV; Pixy2 60° ≈ 270)
+#define PIXY_MIN_AREA_PILLAR    180     // w*h px² (≈ OpenMV 50 px @QQVGA scaled to 316×208)
+#define PIXY_MIN_AREA_LINE      300
+#define PIXY_MIN_AREA_MAGENTA   250
+#define PIXY_LINE_Y_MIN         130     // floor lines: lower band only (y of 0..207)
+#define PIXY_MAGENTA_Y_MIN      70      // parking blocks: mid-lower band

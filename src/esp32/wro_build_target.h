@@ -26,6 +26,7 @@
 #define WRO_TARGET_TEST_VL53L1X            9   // v13 — diag_test_vl53l1x.cpp
 #define WRO_TARGET_BENCH_TEST              10  // v13 — diag_bench_test_v13.cpp
 #define WRO_TARGET_V13_MAIN                11  // v13 — wro_v13_main.cpp  ← ACTIVE
+#define WRO_TARGET_TEST_CAMERA             12  // v13 — diag_test_camera.cpp (OpenMV UART2 link check)
 
 // ── Active target — edit only this single #define line ────────
 //   1  EPS323                  LEGACY v11 (reference only)
@@ -39,4 +40,5 @@
 //   9  TEST_VL53L1X            v13 (VL53L1X with XSHUT addr remap)
 //  10  BENCH_TEST              v13 (all sensors + actuators)
 //  11  V13_MAIN                v13 (Open + Obstacle Challenge)  <-- main firmware
-#define WRO_ACTIVE_TARGET WRO_TARGET_V13_MAIN
+//  12  TEST_CAMERA             v13 (OpenMV UART2: bytes/frames/checksum verdict)
+#define WRO_ACTIVE_TARGET WRO_TARGET_BENCH_TEST
