@@ -14,7 +14,11 @@
  *
  * State machine:
  *   ARMED → SLOWDOWN → COMMIT → BRAKE → EXECUTE → EXIT (→ ARMED via lockout)
- *   PANIC: hard SAFE_STOP if wall closes inside EXECUTE.
+ *   EXECUTE <-> BACK: 3-point "saw" turn — reverse-and-continue when the wall
+ *     closes before the turn finishes (corner tighter than the car's turn
+ *     radius, or a matte-black wall seen too late). The reverse leg counter-
+ *     steers so yaw keeps rotating the SAME way.
+ *   PANIC: hard SAFE_STOP only after TURN_BACK_MAX_TRIES reverse legs.
  *
  * Outputs each tick:
  *   corner_steer_us — steering microseconds (use directly during EXECUTE/BRAKE)
@@ -32,7 +36,8 @@ enum CornerState {
   CN_EXECUTE,
   CN_EXIT,
   CN_LOCKOUT,
-  CN_FAIL
+  CN_FAIL,
+  CN_BACK        // reversing leg of a 3-point turn (appended → telemetry code 8)
 };
 
 void corner_init();

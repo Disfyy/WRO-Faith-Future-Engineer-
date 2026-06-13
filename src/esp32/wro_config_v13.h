@@ -46,14 +46,45 @@
 // 400-450 mm (flickering with 9999 before that). Waiting down to 350 left
 // EXECUTE starting at ~175 mm -> TURN_PANIC abort. Commit on first stable
 // sighting instead.
-#define TURN_COMMIT_MM        420    // commit to turning
+// 2026-06-13 run log: commit at 420 left EXECUTE starting ~350-400 mm; the car
+// ran out of room and tripped TURN_PANIC (80 mm) after only ~30 deg of the 80
+// deg turn -> CN_FAIL/SAFE_STOP. Commit ~120 mm earlier (front DOES see the
+// wall at 600-650 mm intermittently) to buy turning room.
+#define TURN_COMMIT_MM        500    // commit to turning
 #define TURN_FRAMES_DEBOUNCE  3      // valid frames before commit
 #define TURN_BRAKE_MS         100    // brake-straight phase (180 ms ate ~14 cm at 0.8 m/s)
-#define TURN_SPEED_PWM        70     // PWM during EXECUTE (slip kills v11 turn)
+#define TURN_SPEED_PWM        50     // PWM during SLOWDOWN/EXECUTE. MUST stay < OPEN_MAX_PWM
+                                     // or the "slowdown" SPEEDS THE CAR UP: 2026-06-13 had
+                                     // TURN_SPEED_PWM 70 > OPEN_MAX_PWM 65, so the car
+                                     // accelerated into the turn and hit the wall.
 #define TURN_TARGET_DEG       80.0f  // exit angle (under-rotated; heading-hold cleans last 10°)
 #define TURN_MAX_MS           2500   // failsafe abort
 #define TURN_LOCKOUT_MS       800    // suppress re-detect after exit
 #define TURN_PANIC_MM         100    // hard SAFE_STOP if wall this close in EXECUTE
+
+// 3-point ("saw") turn. 2026-06-13: the front VL53L1X cannot see the matte-
+// black wall until ~400 mm, and the car's full-lock turn radius is ~55 cm
+// (steering only ~14 deg), so an 80 deg corner can't be cleared in one forward
+// arc from there — it stalled at ~27 deg and tripped TURN_PANIC -> CN_FAIL.
+// Instead of aborting, reverse a leg (counter-steered so yaw keeps rotating the
+// same way), back off the wall, and resume the forward arc. Repeat up to
+// TURN_BACK_MAX_TRIES. Set TURN_BACKUP_ENABLE 0 to revert to abort-on-panic.
+#define TURN_BACKUP_ENABLE    1
+#define TURN_BACK_TRIGGER_MM  200    // wall this close in EXECUTE → reverse leg (must be > TURN_PANIC_MM)
+#define TURN_BACK_CLEAR_MM    320    // reverse until the wall is at least this far again
+#define TURN_BACK_MAX_MS      700    // time cap on a single reverse leg
+#define TURN_BACK_MAX_TRIES   5      // give up (CN_FAIL) after this many reverse legs
+
+// Camera-assisted corner ENTRY. The matte-black wall is invisible to the front
+// VL53L1X until ~400 mm, so it triggers the slowdown late; the orange/blue
+// corner line on the mat is high-contrast and seen reliably. Use it as an
+// early OR trigger for SLOWDOWN ONLY — COMMIT still needs the ToF wall, so a
+// misread line can never fire a turn mid-straight (the v11 mistake). Harmless
+// until Pixy signatures 3=orange / 4=blue are taught (line bits stay 0).
+#define CORNER_CAMERA_SLOWDOWN  1
+#define CORNER_LINE_DEBOUNCE    3      // CAMERA FRAMES of orange/blue before it counts
+                                       // (gated on g_cam.framesOk, not FSM ticks — a
+                                       // single latched glitch frame must not trigger it)
 
 // ============================================================
 // 2.  OPEN CHALLENGE — heading-hold + segment dead-reckoning
@@ -205,7 +236,9 @@
 // 9.  TIMING
 // ============================================================
 #define LOOP_INTERVAL_MS        10      // main control tick
-#define TELEMETRY_INTERVAL_MS   200
+#define TELEMETRY_INTERVAL_MS   50      // 20 Hz (was 200 = 5 Hz) — finer view of the corner saw cycles.
+                                        // USB ceiling ~115200 baud: a ~120-byte line at 20 Hz ≈ 21% of
+                                        // the link; don't drop below ~30 ms or USB serial backs up.
 #define GYRO_CALIB_SAMPLES_V13  300     // ~3 s @ 10 ms
 #define IMU_DT_MAX              0.05f   // s — clamp for yaw integration
 #define WDT_TIMEOUT_MS          200     // task watchdog: 20× nominal loop period;

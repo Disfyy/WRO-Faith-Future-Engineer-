@@ -41,4 +41,4 @@
 //  10  BENCH_TEST              v13 (all sensors + actuators)
 //  11  V13_MAIN                v13 (Open + Obstacle Challenge)  <-- main firmware
 //  12  TEST_CAMERA             v13 (OpenMV UART2: bytes/frames/checksum verdict)
-#define WRO_ACTIVE_TARGET WRO_TARGET_BENCH_TEST
+#define WRO_ACTIVE_TARGET WRO_TARGET_V13_MAIN
