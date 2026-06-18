@@ -30,7 +30,8 @@ canonical sources of truth.
 | [`guides/WRO_Wiring_Map_v13.md`](guides/WRO_Wiring_Map_v13.md) | Authoritative pin map for the v13 (ESP32-S3) build |
 | [`guides/WRO_Robot_Assembly_and_Startup_Guide.md`](guides/WRO_Robot_Assembly_and_Startup_Guide.md) | Physical build steps + first power-on |
 | [`guides/WRO_Servo_Calibration_Guide.md`](guides/WRO_Servo_Calibration_Guide.md) | Servo center / end-stop / µs-mapping procedure |
-| [`guides/WRO_OpenMV_UART_Protocol.md`](guides/WRO_OpenMV_UART_Protocol.md) | Camera-to-ESP32 frame format spec (v3) |
+| [`guides/WRO_OpenMV_UART_Protocol.md`](guides/WRO_OpenMV_UART_Protocol.md) | Camera-to-ESP32 frame format spec (v3, original/fallback OpenMV backend) |
+| [`guides/WRO_Pixy2_Setup.md`](guides/WRO_Pixy2_Setup.md) | Pixy2/2.1 signature teaching + UART config (active camera backend) |
 
 ## Race-day operations — `checklists/`
 

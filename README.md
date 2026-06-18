@@ -17,7 +17,7 @@ If you've just landed on this repo, start here:
 | **What this robot does** | [Hardware](#-main-hardware-components-v13) and [Software Architecture](#-software-architecture) below |
 | **Active firmware (the file we actually flash)** | [`src/esp32/wro_v13_main.cpp`](src/esp32/wro_v13_main.cpp) — build target 11 |
 | **How we test the robot** | [Testing & Calibration Workflow](#-testing--calibration-workflow) below |
-| **Source code map** | [`src/esp32/README.md`](src/esp32/README.md) (control firmware) · [`src/openmv/README.md`](src/openmv/README.md) (vision) |
+| **Source code map** | [`src/esp32/README.md`](src/esp32/README.md) (control firmware) · [`src/openmv/README.md`](src/openmv/README.md) (original vision backend) · [`src/espcam/README.md`](src/espcam/README.md) (active Pixy2 vision backend) |
 | **Engineering journal** | [`docs/`](docs/) — checklists, guides, strategy, run logs, rules |
 | **Engineering writeups (WRO rubric)** | [`other/`](other/) — mobility / power-and-sense / obstacle management |
 | **3D-printable parts** | [`models/HSP94182_3D/`](models/HSP94182_3D/) |
@@ -32,7 +32,7 @@ If you've just landed on this repo, start here:
 Our vehicle is built on a custom-designed reliable chassis equipped with a powerful processing stack to ensure optimal performance in both Open Challenge and Obstacle Challenge.
 
 - **Main Controller:** ESP32-S3-DevKitC-1 N8R8 (PID, Odometry, FSM)
-- **Computer Vision:** OpenMV H7 Plus (color blob tracking + obstacle distance)
+- **Computer Vision:** Pixy2/2.1 (active backend — color blob tracking + obstacle distance). OpenMV H7 Plus is the original/fallback backend; its OV5640 sensor failed 5 days before competition, see `wro_config_v13.h` §12.
 - **IMU:** Adafruit ICM-20948 (9-DoF, on I2C0)
 - **Encoders:** 2× AS5600 magnetic encoders (12-bit, dual I2C — one per bus, no mux)
 - **Distance:** 2× VL53L1X ToF sensors (XSHUT-based runtime address remap)
@@ -54,6 +54,10 @@ Our software is divided into two continuous independent threads:
 *   **Dynamic Offset PID:** Setpoint shifts ±60 px when an active pillar is in view; far pillar provides a 0.4× pre-position term when both colors are visible.
 *   **Hardware E-Stop:** Press+release arms the start; held during the race triggers `SAFE_STOP` and resumes on release.
 *   **Finish Zone Odometry:** Dual AS5600 encoders track post-3-laps distance to land the robot in the finish band.
+*   **Pixy2 Camera Backend:** Binary block-protocol driver (`wro_camera_pixy2.cpp`) feeding the same `g_cam` struct as the OpenMV backend, so FSM/failsafes/telemetry stay backend-agnostic. See [`docs/guides/WRO_Pixy2_Setup.md`](docs/guides/WRO_Pixy2_Setup.md).
+*   **Steering Asymmetry Trim:** Live-tunable per-side steering gain compensation (`wro_steering_comp.h`) to correct chassis bias.
+*   **Encoder Health Diagnostics:** Magnet-presence and connection-stability checks (target 8) run before odometry is trusted.
+*   **Wi-Fi Telemetry Mirror (testing only):** Optional softAP + UDP broadcast of telemetry for bench debugging (`wro_telemetry_wifi.cpp`), gated off by default — disabled for competition per Rule 11.10.
 
 ---
 
@@ -65,13 +69,14 @@ Our software is divided into two continuous independent threads:
 ├── src
 │   ├── esp32              # ESP32-S3 control firmware (C++) — v13 modular layers
 │   │   ├── wro_v13_main.cpp        # Production firmware (target 11) ← active
-│   │   ├── diag_*.cpp              # Diagnostic targets (2, 8, 9, 10)
+│   │   ├── diag_*.cpp              # Diagnostic targets (2, 8, 9, 10, 12)
 │   │   ├── wro_*.{cpp,h}           # Layered HAL / estimation / behavior / FSM
 │   │   ├── as5600_dual_i2c.h       # AS5600 driver (dual I2C, no mux)
 │   │   ├── vl53l1x_dual.h          # VL53L1X driver (XSHUT addr remap)
 │   │   ├── wro_build_target.h      # Edit one line to switch target
 │   │   └── legacy/                 # v11 archived sources (legacy_*.cpp + README)
-│   └── openmv             # MicroPython machine-vision scripts
+│   ├── openmv              # MicroPython machine-vision scripts (original/fallback backend)
+│   └── espcam              # ESP32-CAM + Pixy2 vision sketch (active backend, see espcam/README.md)
 ├── sketches               # Standalone Arduino sketches (bench tests, servo cal)
 ├── other                  # Engineering writeups by WRO topic
 │   ├── mobility-management              # Drivetrain, steering, chassis, control loops
@@ -94,7 +99,7 @@ Our software is divided into two continuous independent threads:
 ## ⚙️ How to Setup
 
 1. Assemble and wire the chassis according to [`docs/guides/WRO_Wiring_Map_v13.md`](docs/guides/WRO_Wiring_Map_v13.md).
-2. Connect OpenMV to the IDE, run Threshold Editor to configure your field lighting, and save `openmv_main.py` directly to the camera flash as `main.py`.
+2. Camera (active backend, Pixy2): teach signatures in PixyMon per [`docs/guides/WRO_Pixy2_Setup.md`](docs/guides/WRO_Pixy2_Setup.md) and set "Data out port" to UART @ 115200 baud. *(Fallback backend, OpenMV: connect to the IDE, run Threshold Editor to configure field lighting, and save `openmv_main.py` directly to the camera flash as `main.py`.)*
 3. In Arduino IDE, install `Adafruit ICM20948`, `ESP32Servo`, and `VL53L1X` (by Pololu). Open the `src/esp32/` folder as a sketch, set `WRO_ACTIVE_TARGET` in `wro_build_target.h` to `WRO_TARGET_V13_MAIN` (target 11) and flash. Entry point is `src/esp32/wro_v13_main.cpp`.
 4. Select challenge mode at compile time: `OBSTACLE_MODE 0` (Open) or `1` (Obstacle) in `src/esp32/wro_config_v13.h` (Rule 9.9: no physical mode switches). Place on the track, press the E-Stop button to start.
 
@@ -113,15 +118,16 @@ Standalone programs that verify one piece of hardware at a time. Run these in or
 | Order | What we test | How to run |
 |---:|---|---|
 | 1 | Both I2C buses + every address | Set target 2 ([`src/esp32/diag_scan_i2c_v13.cpp`](src/esp32/diag_scan_i2c_v13.cpp)) |
-| 2 | Both AS5600 encoders accumulate ticks | Set target 8 ([`src/esp32/diag_test_encoders.cpp`](src/esp32/diag_test_encoders.cpp)) |
+| 2 | Both AS5600 encoders: connection, magnet health, stability, odometry (keys `s`/`m`/`z`/`h`) | Set target 8 ([`src/esp32/diag_test_encoders.cpp`](src/esp32/diag_test_encoders.cpp)) |
 | 3 | Both VL53L1X ToF after XSHUT remap | Set target 9 ([`src/esp32/diag_test_vl53l1x.cpp`](src/esp32/diag_test_vl53l1x.cpp)) |
 | 4 | Full bench (IMU + servo + motor + camera + E-Stop) | Set target 10 ([`src/esp32/diag_bench_test_v13.cpp`](src/esp32/diag_bench_test_v13.cpp)) |
+| 5 | Camera link check (active backend per `CAMERA_BACKEND`) | Set target 12 ([`src/esp32/diag_test_camera.cpp`](src/esp32/diag_test_camera.cpp)) |
 
 Switch targets by editing one line in [`src/esp32/wro_build_target.h`](src/esp32/wro_build_target.h). Standalone `.ino` versions for the Arduino IDE live in [`sketches/`](sketches/).
 
 ### Layer 2 — Production firmware
 
-When all 4 diagnostics pass, switch to target 11 ([`src/esp32/wro_v13_main.cpp`](src/esp32/wro_v13_main.cpp)) — the actual race firmware. It logs CSV-formatted telemetry over USB serial at 5 Hz.
+When all 5 diagnostics pass, switch to target 11 ([`src/esp32/wro_v13_main.cpp`](src/esp32/wro_v13_main.cpp)) — the actual race firmware. It logs CSV-formatted telemetry over USB serial at 5 Hz.
 
 ### Logging
 
