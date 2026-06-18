@@ -18,8 +18,10 @@ When the first clean run is captured (per the calibration protocol, this
 follows Stage 4 — first reliable 3-lap Open Challenge runs), this file
 will be updated with:
 
-- YouTube URL
+- YouTube URL https://youtu.be/xa8ygO6oQPE?si=rebM9Lfaib3Sgx73
 - Run date and conditions (lighting, battery voltage, firmware commit)
 - Brief description of what's shown
 
 Until then, this folder intentionally contains only a `.gitkeep`.
+
+https://youtu.be/xa8ygO6oQPE?si=rebM9Lfaib3Sgx73
