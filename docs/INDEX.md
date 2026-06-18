@@ -72,4 +72,4 @@ canonical sources of truth.
 
 | Document | Purpose |
 |---|---|
-| [`WRO_FE_SKILL.md`](WRO_FE_SKILL.md) | Project-context document used by Claude Code as a "skill" file |
+| [`WRO_FE_SKILL.md`](WRO_FE_SKILL.md) | Project-context document for AI-assisted work on this repo |

@@ -5,7 +5,7 @@ description: >
   Trigger whenever the user mentions WRO, robot, ESP32, ESP32-S3, OpenMV, PID, servo, FSM, odometry,
   obstacle challenge, open challenge, firmware, sensors, I2C, SPI, UART, camera, encoders, checklist,
   preflight, tuning, competition, engineering journal, or anything related to their autonomous car.
-  This skill contains full project context so Claude can help without re-explanation every time.
+  This skill contains full project context so an AI assistant can help without re-explanation every time.
 ---
 
 # WRO Future Engineers 2026 — Team Faith Skill
@@ -200,8 +200,8 @@ Single character + value, newline-terminated:
 
 ---
 
-## How Claude Should Help
-When the user asks about this project, Claude should:
+## How to Help
+When the user asks about this project, an AI assistant should:
 - Always reference actual file paths in `/Users/nr_ulan/Desktop/WRO_Project_Pack/`
 - Treat **v13** as current; treat `src/esp32/legacy/legacy_*.cpp` and any v12 references in older docs as historical
 - Read `wro_hw_config_v13.h`, `wro_config_v13.h`, `wro_v13_main.cpp` before answering hardware/code questions
