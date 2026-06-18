@@ -10,7 +10,7 @@ purpose so a judge (or a teammate) can find what they need fast.
 
 | Folder | What's inside |
 |---|---|
-| [`guides/`](guides/) | Engineering reference: wiring map, assembly + startup, servo calibration, OpenMV UART protocol |
+| [`guides/`](guides/) | Engineering reference: wiring map, assembly + startup, servo calibration, OpenMV UART protocol, Pixy2 setup |
 | [`checklists/`](checklists/) | Race-day operations: master preflight, quick-race checklist, fillable preflight log |
 | [`strategy/`](strategy/) | Analysis & planning: migration history, rule-compliance matrix, characteristics audit, track test cases, risk register, templates |
 | [`logs/`](logs/) | Running CSV logs: PID tuning, maintenance, test results |
@@ -27,11 +27,12 @@ The active build is **v13** (ESP32-S3, dual native I2C, no mux). Entry point
 ### Recommended preflight workflow (v13)
 
 1. `diag_scan_i2c_v13.cpp` (target 2) — verify both buses, expected addresses on each.
-2. `diag_test_encoders.cpp` (target 8) — verify both AS5600s on dual-I2C accumulate ticks.
+2. `diag_test_encoders.cpp` (target 8) — verify both AS5600s on dual-I2C: connection, magnet health, stability, then accumulate ticks.
 3. `diag_test_vl53l1x.cpp` (target 9) — verify front + side VL53L1X come up post-XSHUT-remap.
 4. `diag_bench_test_v13.cpp` (target 10) — full hardware sanity check.
-5. `wro_v13_main.cpp` (target 11) — wheels-up smoke test.
-6. On-track tuning — straight, single corner, full lap.
+5. `diag_test_camera.cpp` (target 12) — verify the active camera backend (Pixy2 by default, see `CAMERA_BACKEND` in `wro_config_v13.h`) responds over UART.
+6. `wro_v13_main.cpp` (target 11) — wheels-up smoke test.
+7. On-track tuning — straight, single corner, full lap.
 
 For step-by-step preflight see
 [`checklists/WRO_Robot_Master_Checklist_2026-03-27.md`](checklists/WRO_Robot_Master_Checklist_2026-03-27.md)

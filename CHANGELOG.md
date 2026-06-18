@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## Unreleased — Camera backend switch + diagnostics/tuning hardening
+
+### Why
+The OpenMV H7 Plus's OV5640 sensor module died 5 days before competition.
+Rather than risk a no-camera run, the ESP32 firmware was made
+backend-agnostic and a Pixy2/2.1 was wired onto the same UART2 pins as an
+interim/active camera.
+
+### Added
+- **Pixy2 camera backend** (`src/esp32/wro_camera_pixy2.cpp`, `CAMERA_BACKEND` in `wro_config_v13.h` §12) — binary block-protocol driver feeding the same `g_cam` struct as the OpenMV backend, so FSM/failsafes/telemetry are unchanged. `CAMERA_BACKEND` defaults to `CAMERA_BACKEND_PIXY2`; flip back to `CAMERA_BACKEND_OPENMV` if the OpenMV module is revived.
+- `src/espcam/` (ESP32-CAM + Pixy2 vision sketch) and [`docs/guides/WRO_Pixy2_Setup.md`](docs/guides/WRO_Pixy2_Setup.md) — signature teaching order (1=red pillar, 2=green pillar, 3=orange line, 4=blue line, 5=magenta parking) and UART config (115200 baud, factory default is 19200).
+- Diagnostic target 12, `src/esp32/diag_test_camera.cpp` (`WRO_TARGET_TEST_CAMERA`) — verifies the active camera backend responds over UART before a test session.
+- Encoder diagnostic (target 8, `diag_test_encoders.cpp`) rewritten with a 4-step CONNECTION/MAGNET/STABILITY/ODOMETRY sequence and live keys (`s`, `m`, `z`, `h`) to catch failing AS5600 magnets before they corrupt odometry.
+- `wro_steering_comp.h` — live-tunable per-side steering gain trim to correct chassis-specific left/right bias.
+- `wro_telemetry_wifi.cpp/.h` — optional softAP + UDP broadcast mirror of telemetry for bench debugging, gated by the `WIFI_TELEMETRY` flag (off by default; must stay off for competition per Rule 11.10, no wireless during the run).
+
+### Changed (sensor/control retunes)
+- VL53L1X distance mode: Medium → Long.
+- `TURN_COMMIT_MM`: 350 → 420.
+- `TURN_BRAKE_MS`: 180 → 100.
+- `OPEN_MAX_PWM`: 80 → 65.
+- E-Stop button wiring is now a real hardware stop (previously bypassed during bench testing).
+
 ## Unreleased — Repo signposting + diagnostic rename
 
 ### Added
