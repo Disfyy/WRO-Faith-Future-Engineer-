@@ -120,7 +120,7 @@ void tlm_update_periodic(int race_state, int corner_state, int lap,
   // Build once so USB serial and the Wi-Fi mirror emit the identical line.
   static char tlmLine[160];
   snprintf(tlmLine, sizeof(tlmLine),
-    "T=%lu ST=%s CN=%s LAP=%d YAW=%.1f DST=L%+ld/R%+ld TF=%dmm CAM=R(%d,%d)/G(%d,%d) PWM=%+d ST=%dus\n",
+    "T=%lu ST=%s CN=%s LAP=%d YAW=%.1f DST=L%+ld/R%+ld TF=%dmm CAM=R(%d,%d)/G(%d,%d) FLG=%X PWM=%+d ST=%dus\n",
     now,
     raceStateName(race_state),
     cornerStateName(corner_state),
@@ -130,6 +130,7 @@ void tlm_update_periodic(int race_state, int corner_state, int lap,
     sens_tf_front_mm(),
     g_cam.redX, rd,
     g_cam.greenX, gd,
+    (unsigned)g_cam.modeFlag,
     signed_pwm, steer_us
   );
   Serial.print(tlmLine);
@@ -159,6 +160,7 @@ static const char* cornerStateName(int s) {
     case 5: return "EXIT";
     case 6: return "LOCK";
     case 7: return "FAIL";
+    case 8: return "BACK";
     default: return "?";
   }
 }
